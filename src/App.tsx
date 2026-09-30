@@ -11,6 +11,7 @@ import { GlobalTutorChatWidget } from './components/GlobalTutorChatWidget.js';
 import { SuperSearchModal } from './components/SuperSearchModal.js';
 import { CenterStageSettingsModal } from './components/CenterStageSettingsModal.js';
 import { StudentDashboard } from './views/StudentDashboard.js';
+import { StudentGovtBenefitsView } from './views/StudentGovtBenefitsView.js';
 import { StudentModulesView } from './views/StudentModulesView.js';
 import { StudentMindMapView } from './views/StudentMindMapView.js';
 import { StudentFlashcardsView } from './views/StudentFlashcardsView.js';
@@ -55,6 +56,8 @@ function MainLayout() {
     switch (activeView) {
       case 'student_dashboard':
         return <StudentDashboard />;
+      case 'student_govt_benefits':
+        return <StudentGovtBenefitsView />;
       case 'student_modules':
         return <StudentModulesView />;
       case 'student_mindmap':

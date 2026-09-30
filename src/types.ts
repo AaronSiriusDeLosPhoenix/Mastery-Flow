@@ -2,6 +2,7 @@ export * from './server/db/types.js';
 
 export type AppView = 
   | 'student_dashboard'
+  | 'student_govt_benefits'
   | 'student_modules'
   | 'student_mindmap'
   | 'student_flashcards'

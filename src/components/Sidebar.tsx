@@ -19,6 +19,7 @@ import {
   X,
   Award,
   Sliders,
+  Landmark,
 } from 'lucide-react';
 import { AppView } from '../types.js';
 
@@ -45,6 +46,13 @@ export const Sidebar: React.FC = () => {
   const navItems: NavItem[] = [
     // Student links
     { id: 'student_dashboard', label: 'Learner Dashboard', icon: LayoutDashboard, category: 'student' },
+    {
+      id: 'student_govt_benefits',
+      label: 'Govt Benefits & Hub',
+      icon: Landmark,
+      metaText: 'NSP',
+      category: 'student',
+    },
     { id: 'student_modules', label: 'Modules & Lessons', icon: Layers, category: 'student' },
     { id: 'student_mindmap', label: 'Interactive Mind Map', icon: Network, metaText: 'DAG', category: 'student' },
     { id: 'student_flashcards', label: 'Adaptive Flashcards', icon: Brain, metaText: 'Recall', category: 'student' },

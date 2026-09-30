@@ -210,6 +210,18 @@ export const SuperSearchModal: React.FC = () => {
   // 3. Quick Actions
   allResults.push(
     {
+      id: 'action_govt_benefits',
+      title: 'Government Benefits, Scholarships & Credit Hub (NSP, IIT PAL, PM e-Vidya)',
+      subtitle: 'Check scholarship eligibility, PM-Vidyalaxmi 3% loan subsidy & free NTA e-Abhyas prep',
+      category: 'action',
+      badge: 'Govt Hub',
+      icon: <GraduationCap className="w-4 h-4 text-blue-700" />,
+      onSelect: () => {
+        setActiveView('student_govt_benefits');
+        setIsSuperSearchOpen(false);
+      },
+    },
+    {
       id: 'action_mindmap',
       title: 'Interactive Knowledge Mind Map',
       subtitle: 'Inspect concept prerequisite dependencies & gaps',

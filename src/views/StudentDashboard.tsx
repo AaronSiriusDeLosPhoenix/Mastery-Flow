@@ -1,18 +1,15 @@
 import React from 'react';
 import { useApp } from '../context/AppContext.js';
 import { WhyNextCard } from '../components/WhyNextCard.js';
+import { GovtBenefitsHub } from '../components/GovtBenefitsHub.js';
 import {
   TrendingUp,
   Flame,
-  Award,
   Clock,
-  Sparkles,
   ArrowRight,
   CheckCircle2,
   Brain,
-  GraduationCap,
-  Layers,
-  FileText,
+  Landmark,
 } from 'lucide-react';
 import { RecommendationAction } from '../types.js';
 
@@ -83,6 +80,13 @@ export const StudentDashboard: React.FC = () => {
 
         {/* Status indicator on the right of welcome bar */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveView('student_govt_benefits')}
+            className="text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            <Landmark className="w-3.5 h-3.5" />
+            <span>Govt Scholarships & Credit Hub</span>
+          </button>
           <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl">
             {currentLearner.conceptMasteries ? `${Object.keys(currentLearner.conceptMasteries).length} Concepts Tracked` : 'Active Curriculum'}
           </span>
@@ -203,6 +207,9 @@ export const StudentDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* 5. Government Benefits, Scholarships & Credit Hub (Responsive Grid inside Student Dashboard) */}
+      <GovtBenefitsHub compact={true} />
     </div>
   );
 };
