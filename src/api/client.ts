@@ -1338,6 +1338,80 @@ export async function fetchRegisteredModels(): Promise<{
   return res.json();
 }
 
+// ==========================================
+// PERSONALIZED LEARNING ROADMAP CLIENT
+// ==========================================
+
+export async function fetchRoadmap(
+  learnerId: string,
+  domainId?: DomainId,
+  roleContext?: 'STUDENT' | 'TEACHER' | 'ADMIN'
+): Promise<import('../types.js').PersonalizedRoadmapData> {
+  const headers = getAuthHeaders();
+  if (roleContext) {
+    headers['X-Role-Context'] = roleContext;
+  }
+  const url = domainId
+    ? `${API_BASE}/roadmap/${encodeURIComponent(learnerId)}?domain=${encodeURIComponent(domainId)}`
+    : `${API_BASE}/roadmap/${encodeURIComponent(learnerId)}`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to fetch personalized roadmap');
+  }
+  return res.json();
+}
+
+export async function fetchCurrentRoadmapAction(
+  learnerId: string,
+  domainId?: DomainId,
+  roleContext?: 'STUDENT' | 'TEACHER' | 'ADMIN'
+): Promise<{
+  learnerId: string;
+  domainId: DomainId;
+  progress: import('../types.js').RoadmapProgressSummary;
+  currentAction: import('../types.js').RoadmapCurrentAction;
+}> {
+  const headers = getAuthHeaders();
+  if (roleContext) {
+    headers['X-Role-Context'] = roleContext;
+  }
+  const url = domainId
+    ? `${API_BASE}/roadmap/${encodeURIComponent(learnerId)}/current?domain=${encodeURIComponent(domainId)}`
+    : `${API_BASE}/roadmap/${encodeURIComponent(learnerId)}/current`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to fetch current roadmap action');
+  }
+  return res.json();
+}
+
+export async function fetchRoadmapConceptDetail(
+  learnerId: string,
+  conceptId: string,
+  roleContext?: 'STUDENT' | 'TEACHER' | 'ADMIN'
+): Promise<{
+  learnerId: string;
+  conceptId: string;
+  item: import('../types.js').RoadmapItem;
+}> {
+  const headers = getAuthHeaders();
+  if (roleContext) {
+    headers['X-Role-Context'] = roleContext;
+  }
+  const res = await fetch(
+    `${API_BASE}/roadmap/${encodeURIComponent(learnerId)}/concept/${encodeURIComponent(conceptId)}`,
+    { headers }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to fetch roadmap concept detail');
+  }
+  return res.json();
+}
+
+
 
 
 

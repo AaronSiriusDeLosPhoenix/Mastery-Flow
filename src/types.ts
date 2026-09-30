@@ -4,6 +4,7 @@ export type AppView =
   | 'student_dashboard'
   | 'student_govt_benefits'
   | 'student_modules'
+  | 'student_roadmap'
   | 'student_mindmap'
   | 'student_flashcards'
   | 'student_mock_exam'

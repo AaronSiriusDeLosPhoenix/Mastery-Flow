@@ -573,6 +573,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setConcepts(filtered.length > 0 ? filtered : allSystemConcepts);
           if (filtered.length > 0) setTargetConceptId(filtered[0].id);
         }
+        // Keep demo session token aligned when switching demo student personas
+        if (
+          currentUser &&
+          currentUser.role === 'STUDENT' &&
+          currentUser.id !== activeStudentId &&
+          ['student_a', 'student_b', 'student_c'].includes(activeStudentId)
+        ) {
+          api
+            .demoLogin(activeStudentId)
+            .then((res) => setCurrentUser(res.user))
+            .catch(() => {});
+        }
       }
     }
   }, [activeStudentId, allSystemConcepts]);

@@ -20,6 +20,7 @@ import {
   Award,
   Sliders,
   Landmark,
+  Compass,
 } from 'lucide-react';
 import { AppView } from '../types.js';
 
@@ -47,18 +48,25 @@ export const Sidebar: React.FC = () => {
     // Student links
     { id: 'student_dashboard', label: 'Learner Dashboard', icon: LayoutDashboard, category: 'student' },
     {
+      id: 'student_roadmap',
+      label: 'Personalized Roadmap',
+      icon: Compass,
+      metaText: 'Next',
+      category: 'student',
+    },
+    { id: 'student_mindmap', label: 'Interactive Mind Map', icon: Network, metaText: 'DAG', category: 'student' },
+    { id: 'student_modules', label: 'Modules & Lessons', icon: Layers, category: 'student' },
+    { id: 'student_learn', label: 'Practice & Feedback', icon: BookOpen, category: 'student' },
+    { id: 'student_flashcards', label: 'Adaptive Flashcards', icon: Brain, metaText: 'Recall', category: 'student' },
+    { id: 'student_mock_exam', label: 'Adaptive Mock Exam', icon: GraduationCap, metaText: 'Exam', category: 'student' },
+    { id: 'student_concepts', label: 'Concept Graph (DAG)', icon: GitFork, category: 'student' },
+    {
       id: 'student_govt_benefits',
       label: 'Govt Benefits & Hub',
       icon: Landmark,
       metaText: 'NSP',
       category: 'student',
     },
-    { id: 'student_modules', label: 'Modules & Lessons', icon: Layers, category: 'student' },
-    { id: 'student_mindmap', label: 'Interactive Mind Map', icon: Network, metaText: 'DAG', category: 'student' },
-    { id: 'student_flashcards', label: 'Adaptive Flashcards', icon: Brain, metaText: 'Recall', category: 'student' },
-    { id: 'student_mock_exam', label: 'Adaptive Mock Exam', icon: GraduationCap, metaText: 'Exam', category: 'student' },
-    { id: 'student_concepts', label: 'Concept Graph (DAG)', icon: GitFork, category: 'student' },
-    { id: 'student_learn', label: 'Practice & Feedback', icon: BookOpen, category: 'student' },
     {
       id: 'student_diagnostic',
       label: 'Diagnostic Test',
@@ -80,14 +88,20 @@ export const Sidebar: React.FC = () => {
 
     // Database & Innovations
     {
+      id: 'evaluation',
+      label: 'ML & Audit Lab',
+      icon: FlaskConical,
+      metaText: 'ML / BKT',
+      category: 'system',
+    },
+    { id: 'simulation', label: 'Two-Learner Sim', icon: GitCompare, metaText: 'Sim', category: 'system' },
+    {
       id: 'database_explorer',
       label: 'Database Explorer',
       icon: Database,
       metaText: '9 Entities',
       category: 'system',
     },
-    { id: 'simulation', label: 'Two-Learner Sim', icon: GitCompare, metaText: 'Sim', category: 'system' },
-    { id: 'evaluation', label: 'Stress-Test Center', icon: FlaskConical, metaText: '6 Tests', category: 'system' },
   ];
 
   const visibleItems = navItems.filter((item) => {

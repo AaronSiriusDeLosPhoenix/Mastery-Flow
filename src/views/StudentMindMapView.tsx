@@ -175,12 +175,23 @@ export const StudentMindMapView: React.FC = () => {
             <span>AI-Powered Interactive Mind Map</span>
           </h1>
           <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">
-            Explore the multi-tier hierarchy of subjects, modules, lessons, concepts, and prerequisite knowledge relationships.
+            <strong>“How are concepts connected?”</strong> Explore the multi-tier knowledge structure of subjects, modules, lessons, concepts, and prerequisite dependencies.
           </p>
         </div>
 
         {/* Quick Subject Switcher & Stats */}
         <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={() => {
+              if (selectedNode?.conceptId) {
+                setTargetConceptId(selectedNode.conceptId);
+              }
+              setActiveView('student_roadmap');
+            }}
+            className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold transition-colors cursor-pointer"
+          >
+            Open Personalized Roadmap →
+          </button>
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
               Select Subject:
@@ -376,6 +387,10 @@ export const StudentMindMapView: React.FC = () => {
                 onSelectNodeById={(id) => {
                   const target = mindMapData.nodes.find((n) => n.id === id);
                   if (target) handleSelectNode(target);
+                }}
+                onOpenInRoadmap={(conceptId) => {
+                  setTargetConceptId(conceptId);
+                  setActiveView('student_roadmap');
                 }}
               />
             </div>

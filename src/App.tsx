@@ -13,6 +13,7 @@ import { CenterStageSettingsModal } from './components/CenterStageSettingsModal.
 import { StudentDashboard } from './views/StudentDashboard.js';
 import { StudentGovtBenefitsView } from './views/StudentGovtBenefitsView.js';
 import { StudentModulesView } from './views/StudentModulesView.js';
+import { StudentRoadmapView } from './views/StudentRoadmapView.js';
 import { StudentMindMapView } from './views/StudentMindMapView.js';
 import { StudentFlashcardsView } from './views/StudentFlashcardsView.js';
 import { StudentMockExamView } from './views/StudentMockExamView.js';
@@ -60,6 +61,8 @@ function MainLayout() {
         return <StudentGovtBenefitsView />;
       case 'student_modules':
         return <StudentModulesView />;
+      case 'student_roadmap':
+        return <StudentRoadmapView />;
       case 'student_mindmap':
         return <StudentMindMapView />;
       case 'student_flashcards':

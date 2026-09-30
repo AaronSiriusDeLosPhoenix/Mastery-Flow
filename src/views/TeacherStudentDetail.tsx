@@ -14,9 +14,11 @@ import {
   GraduationCap,
   FileText,
   Cpu,
+  Compass,
+  Lock,
 } from 'lucide-react';
 import { TeacherOverrideModal } from '../components/TeacherOverrideModal.js';
-import { MockExamSession } from '../types.js';
+import { MockExamSession, PersonalizedRoadmapData } from '../types.js';
 import * as api from '../api/client.js';
 
 export const TeacherStudentDetail: React.FC = () => {
@@ -35,11 +37,16 @@ export const TeacherStudentDetail: React.FC = () => {
   const [examHistory, setExamHistory] = useState<MockExamSession[]>([]);
   const [predictions, setPredictions] = useState<import('../types.js').MLPredictionRecord[]>([]);
   const [recommendations, setRecommendations] = useState<import('../types.js').MLRecommendationRecord[]>([]);
+  const [studentRoadmap, setStudentRoadmap] = useState<PersonalizedRoadmapData | null>(null);
 
   const learner = allLearners.find((l) => l.id === targetTeacherStudentId) || allLearners[0];
 
   React.useEffect(() => {
     if (learner) {
+      api.fetchRoadmap(learner.id, undefined, 'TEACHER')
+        .then(setStudentRoadmap)
+        .catch(() => setStudentRoadmap(null));
+
       api.fetchMockExamHistory(learner.id)
         .then(setExamHistory)
         .catch(() => setExamHistory([]));
@@ -196,6 +203,121 @@ export const TeacherStudentDetail: React.FC = () => {
           iconColor="text-indigo-600"
         />
       </div>
+
+      {/* Section 22: Teacher Visibility — Personalized Learner Roadmap Inspection */}
+      {studentRoadmap && (
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-200">
+                <Compass className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Personalized Learner Roadmap Inspection ({studentRoadmap.domainName})
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Inspect current recommended step, blocked prerequisites, forgetting-risk concepts, and intervention flags
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+              <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-bold">
+                Progress: {studentRoadmap.progress.completed}/{studentRoadmap.progress.total} ({studentRoadmap.progress.percentage}%)
+              </span>
+              {studentRoadmap.progress.reviewNeeded > 0 && (
+                <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-bold">
+                  {studentRoadmap.progress.reviewNeeded} Forgetting Risk
+                </span>
+              )}
+              {studentRoadmap.progress.prerequisiteBlocked > 0 && (
+                <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 font-bold">
+                  {studentRoadmap.progress.prerequisiteBlocked} Prereq Blocked
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Current Recommended Step & Intervention Banner */}
+          <div className="p-4 rounded-2xl bg-indigo-50/40 border border-indigo-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold text-indigo-700 uppercase tracking-wider">
+                  ▶ Current Recommended Step:
+                </span>
+                <span className="font-bold text-slate-900">
+                  {studentRoadmap.currentAction.conceptName}
+                </span>
+                <span>·</span>
+                <span className="font-mono font-bold text-indigo-800">
+                  {studentRoadmap.currentAction.action.replace('_', ' ')}
+                </span>
+                {studentRoadmap.currentAction.action === 'TEACHER_INTERVENTION' && (
+                  <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 font-bold">
+                    ⚠ INTERVENTION NEEDED
+                  </span>
+                )}
+              </div>
+              <p className="text-slate-700 leading-relaxed">
+                <strong>Diagnostic Reason: </strong>
+                {studentRoadmap.currentAction.reason}
+              </p>
+            </div>
+
+            <button
+              onClick={() => setIsOverrideModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 font-bold transition-colors shrink-0 cursor-pointer"
+            >
+              Override Step
+            </button>
+          </div>
+
+          {/* Ordered Roadmap Sequence Table for Faculty */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {studentRoadmap.items.map((item, idx) => (
+              <div
+                key={item.conceptId}
+                className={`p-3.5 rounded-2xl border text-xs space-y-1.5 ${
+                  item.status === 'current'
+                    ? 'border-indigo-400 bg-indigo-50/20'
+                    : item.status === 'completed'
+                    ? 'border-emerald-200 bg-emerald-50/15'
+                    : item.status === 'blocked'
+                    ? 'border-amber-200 bg-amber-50/20'
+                    : 'border-slate-200 bg-slate-50/50'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-slate-900 truncate">
+                    {idx + 1}. {item.conceptName}
+                  </span>
+                  <span className="font-mono text-[10px] font-bold uppercase text-slate-600 shrink-0">
+                    {item.status === 'completed'
+                      ? '✓ Done'
+                      : item.status === 'current'
+                      ? '▶ Current'
+                      : item.status === 'blocked'
+                      ? '🔒 Blocked'
+                      : '○ Upcoming'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] font-mono text-slate-600">
+                  <span className="font-bold text-indigo-700">
+                    {item.action.replace('_', ' ')}
+                  </span>
+                  <span>
+                    M: {(item.mastery * 100).toFixed(0)}% · Risk: {(item.forgettingRisk * 100).toFixed(0)}%
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed line-clamp-2">
+                  {item.reason}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Concept Breakdown Table */}
       <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4">

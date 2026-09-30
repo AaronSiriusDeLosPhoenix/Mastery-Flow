@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext.js';
 import { WhyNextCard } from '../components/WhyNextCard.js';
 import { GovtBenefitsHub } from '../components/GovtBenefitsHub.js';
+import * as api from '../api/client.js';
 import {
   TrendingUp,
   Flame,
@@ -10,8 +11,10 @@ import {
   CheckCircle2,
   Brain,
   Landmark,
+  Compass,
+  FlaskConical,
 } from 'lucide-react';
-import { RecommendationAction } from '../types.js';
+import { PersonalizedRoadmapData, RecommendationAction } from '../types.js';
 
 export const StudentDashboard: React.FC = () => {
   const {
@@ -26,7 +29,18 @@ export const StudentDashboard: React.FC = () => {
     progressData,
     setIsProgressReportModalOpen,
     toggleSidebar,
+    currentRole,
   } = useApp();
+
+  const [roadmapData, setRoadmapData] = useState<PersonalizedRoadmapData | null>(null);
+
+  useEffect(() => {
+    if (!currentLearner) return;
+    api
+      .fetchRoadmap(currentLearner.id, activeDomainId, currentRole)
+      .then(setRoadmapData)
+      .catch(() => {});
+  }, [currentLearner?.id, activeDomainId, currentLearner?.overallMastery, currentLearner?.recentAttempts?.length, currentRole]);
 
   if (!currentLearner) {
     return (
@@ -388,65 +402,167 @@ export const StudentDashboard: React.FC = () => {
         </div>
 
         {/* AI & ML Transparency Distinction Callout */}
-        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-600 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-600 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <strong className="text-slate-800">Model Transparency: </strong>
             <span>
               <strong>Gemini AI</strong> is used strictly for generative tutoring, explanations, and reading-level adaptation — never to guess or fabricate mastery scores. Mastery and recommendations are computed deterministically by <strong>BKT</strong>, <strong>IRT</strong>, <strong>FSFR</strong>, and <strong>Calibrated Logistic Regression</strong>.
             </span>
           </div>
+          <button
+            onClick={() => setActiveView('evaluation')}
+            className="shrink-0 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-indigo-700 border border-indigo-200 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+          >
+            <FlaskConical className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Inspect Live ML & BKT Engine →</span>
+          </button>
         </div>
       </div>
 
-      {/* 5. Personalized Adaptive Roadmap (Distinct from Mind Map Knowledge Structure) */}
+      {/* 5. Personalized Adaptive Roadmap Summary (Section 20: Current Concept, Recommended Action, Why, Next 2-3 Upcoming Steps, Open Full Roadmap) */}
       <div className="p-5 sm:p-6 bg-white rounded-2xl border border-slate-200/90 shadow-2xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
           <div>
             <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
-              <span>Personalized Learning Journey</span>
+              <Compass className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Personalized Learning Roadmap</span>
               <span aria-hidden="true">·</span>
-              <span>Dynamically Reordered by Mastery, Prerequisites, Retention & ML</span>
+              <span className="text-indigo-700 font-semibold">“What should this learner do next?”</span>
             </div>
             <h3 className="text-base font-bold text-slate-900 mt-0.5">
-              Adaptive Curriculum Roadmap ({activeDomain?.shortLabel || 'Active Track'})
+              Your Dynamic Learning Sequence ({activeDomain?.shortLabel || 'Active Track'})
             </h3>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setActiveView('student_roadmap')}
+              className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>Open Full Roadmap</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
             <button
               onClick={() => setActiveView('student_mindmap')}
-              className="text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
+              className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
             >
-              View Mind Map (Knowledge Structure) →
+              Mind Map (Structure)
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {personalizedRoadmap.map((item, idx) => {
-            const actionColors: Record<RecommendationAction, string> = {
-              ADVANCE: 'border-l-emerald-500 bg-emerald-50/30',
-              CHALLENGE: 'border-l-purple-500 bg-purple-50/30',
-              PRACTICE: 'border-l-blue-500 bg-blue-50/30',
-              REVIEW: 'border-l-amber-500 bg-amber-50/30',
-              REMEDIATE_PREREQUISITE: 'border-l-amber-600 bg-amber-50/40',
-              TEACHER_INTERVENTION: 'border-l-rose-500 bg-rose-50/40',
-            };
-            return (
+        {/* Current Recommended Step + Next 2-3 Upcoming Steps */}
+        {roadmapData ? (
+          <div className="space-y-3">
+            {/* Current Primary Step Card */}
+            <div className="p-4 rounded-xl border-2 border-indigo-600/80 bg-indigo-50/20 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-bold text-indigo-700 uppercase tracking-wider">
+                    ▶ Current Step
+                  </span>
+                  <span>·</span>
+                  <span className="font-bold text-slate-900">
+                    {roadmapData.currentAction.conceptName}
+                  </span>
+                  <span>·</span>
+                  <span className="font-mono font-bold text-indigo-700">
+                    {roadmapData.currentAction.action.replace('_', ' ')}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  <strong>Why: </strong>
+                  {roadmapData.currentAction.reason}
+                </p>
+                <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px] font-mono text-slate-500">
+                  <span>
+                    Hybrid Mastery: <strong className="text-slate-900">{(roadmapData.currentAction.mastery * 100).toFixed(0)}%</strong>
+                  </span>
+                  {roadmapData.currentAction.bktKnowledge !== undefined && (
+                    <span>
+                      BKT: <strong className="text-violet-700">{(roadmapData.currentAction.bktKnowledge * 100).toFixed(0)}%</strong>
+                    </span>
+                  )}
+                  {roadmapData.mlAvailable && roadmapData.currentAction.mlProbability !== undefined && (
+                    <span>
+                      ML: <strong className="text-indigo-700">{(roadmapData.currentAction.mlProbability * 100).toFixed(0)}%</strong>
+                    </span>
+                  )}
+                  <span>
+                    Forgetting Risk: <strong className="text-slate-800">{(roadmapData.currentAction.forgettingRisk * 100).toFixed(0)}%</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() =>
+                    handleExecuteAction(
+                      roadmapData.currentAction.conceptId,
+                      roadmapData.currentAction.action
+                    )
+                  }
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>{roadmapData.currentAction.ctaLabel}</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Next 3 Upcoming Steps */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span className="font-semibold">Next Upcoming Steps in Your Sequence</span>
+                <span className="font-mono">
+                  {roadmapData.progress.completed}/{roadmapData.progress.total} Track Concepts Completed ({roadmapData.progress.percentage}%)
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {roadmapData.items
+                  .filter((i) => i.conceptId !== roadmapData.currentAction.conceptId && i.status !== 'completed')
+                  .slice(0, 3)
+                  .map((step, idx) => (
+                    <div
+                      key={step.conceptId}
+                      onClick={() => {
+                        setTargetConceptId(step.conceptId);
+                        setActiveView('student_roadmap');
+                      }}
+                      className="p-3.5 rounded-xl border border-slate-200/80 bg-slate-50/70 hover:border-slate-300 transition-colors cursor-pointer flex flex-col justify-between gap-2"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-900">
+                            {idx + 2}. {step.conceptName}
+                          </span>
+                          <span className="text-[10px] font-mono font-bold text-slate-600">
+                            {step.status === 'blocked' ? '🔒 BLOCKED' : step.action.replace('_', ' ')}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">
+                          {step.reason}
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 text-[11px] font-mono text-slate-500">
+                        <span>Mastery: {(step.mastery * 100).toFixed(0)}%</span>
+                        <span className="text-indigo-600 font-sans font-semibold">Inspect →</span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {personalizedRoadmap.slice(0, 4).map((item, idx) => (
               <div
                 key={item.concept.id}
-                className={`p-3.5 rounded-xl border border-slate-200/80 border-l-4 ${
-                  actionColors[item.roadAction]
-                } flex flex-col justify-between gap-2.5`}
+                className="p-3.5 rounded-xl border border-slate-200/80 flex flex-col justify-between gap-2.5"
               >
                 <div className="space-y-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-bold text-slate-900">
                       {idx + 1}. {item.concept.name}
-                      {item.isCurrentRec && (
-                        <span className="ml-2 text-[10px] font-bold text-indigo-700 uppercase">
-                          · Next Recommended
-                        </span>
-                      )}
                     </span>
                     <span className="text-[11px] font-bold font-mono text-slate-700">
                       {item.roadAction.replace('_', ' ')}
@@ -456,27 +572,10 @@ export const StudentDashboard: React.FC = () => {
                     {item.roadReason}
                   </p>
                 </div>
-
-                <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-[11px] text-slate-500">
-                  <div className="flex items-center gap-2 font-mono tabular-nums">
-                    <span>Hybrid: <strong className="text-slate-800">{(item.masteryVal * 100).toFixed(0)}%</strong></span>
-                    <span>·</span>
-                    <span>ML: <strong className="text-indigo-700">{(item.mlProb * 100).toFixed(0)}%</strong></span>
-                    <span>·</span>
-                    <span>Ret: <strong className="text-slate-800">{(item.retentionVal * 100).toFixed(0)}%</strong></span>
-                  </div>
-                  <button
-                    onClick={() => handleExecuteAction(item.concept.id, item.roadAction)}
-                    className="text-xs font-bold text-slate-900 hover:text-indigo-600 flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>Start</span>
-                    <ArrowRight className="w-3 h-3" />
-                  </button>
-                </div>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 6. Government Benefits, Scholarships & Credit Hub */}

@@ -18,6 +18,7 @@ import {
 import { tutorAiService } from '../engine/tutorAiService.js';
 import { learningPathEngine } from '../engine/learningPathEngine.js';
 import { mindMapEngine } from '../engine/mindMapEngine.js';
+import { roadmapEngine } from '../engine/roadmapEngine.js';
 import { flashcardEngine } from '../engine/flashcardEngine.js';
 import { examEngine } from '../engine/examEngine.js';
 import { authService } from '../engine/authService.js';
@@ -823,6 +824,7 @@ apiRouter.post('/lessons/:lessonId/complete', (req, res) => {
       questionsCorrect,
       timeSpentSeconds,
     });
+    roadmapEngine.invalidateCache(effectiveLearnerId);
 
     res.json({
       success: true,
@@ -1520,6 +1522,7 @@ apiRouter.post('/attempts', (req, res) => {
     });
 
     const updatedLearner = store.learners.get(learnerId);
+    roadmapEngine.invalidateCache(learnerId);
 
     res.json({
       success: true,
@@ -1551,6 +1554,7 @@ apiRouter.post('/override', (req, res) => {
     );
 
     const updatedLearner = store.learners.get(learnerId);
+    roadmapEngine.invalidateCache(learnerId);
 
     res.json({
       success: true,
@@ -1584,6 +1588,7 @@ apiRouter.post('/simulate-time', (req, res) => {
       }
     }
 
+    roadmapEngine.invalidateCache(learner.id);
     res.json({
       success: true,
       daysSimulated: daysNum,
@@ -1596,6 +1601,7 @@ apiRouter.post('/simulate-time', (req, res) => {
 
 apiRouter.post('/reset-demo', (_req, res) => {
   store.seedDatabase();
+  roadmapEngine.invalidateCache();
   res.json({
     success: true,
     message: 'Demo database reset to clean seeded state.',
@@ -2096,4 +2102,88 @@ apiRouter.put('/bkt/config', (req, res) => {
     res.status(500).json({ error: err.message || 'Error updating BKT config' });
   }
 });
+
+// ==========================================
+// PERSONALIZED LEARNING ROADMAP API
+// ==========================================
+
+function resolveRoadmapRequester(req: any, requestedLearnerId: string): {
+  effectiveLearnerId: string;
+  forbidden: boolean;
+} {
+  const auth = getAuthenticatedUser(req);
+  const roleContext = req.headers?.['x-role-context'];
+  if (auth) {
+    if (auth.user.role === 'TEACHER' || auth.user.role === 'ADMIN' || roleContext === 'TEACHER') {
+      return { effectiveLearnerId: requestedLearnerId || auth.user.id, forbidden: false };
+    }
+    if (requestedLearnerId && requestedLearnerId !== auth.user.id) {
+      return { effectiveLearnerId: auth.user.id, forbidden: true };
+    }
+    return { effectiveLearnerId: auth.user.id, forbidden: false };
+  }
+  return { effectiveLearnerId: requestedLearnerId || 'student_a', forbidden: false };
+}
+
+// 1. Get complete personalized learning roadmap for a learner
+apiRouter.get('/roadmap/:learnerId', (req, res) => {
+  try {
+    const { effectiveLearnerId, forbidden } = resolveRoadmapRequester(req, req.params.learnerId);
+    if (forbidden) {
+      return res.status(403).json({
+        error: 'Forbidden: Learners cannot access another learner\'s personalized roadmap.',
+      });
+    }
+
+    const domainId = req.query.domain as DomainId | undefined;
+    const roadmap = roadmapEngine.generateRoadmap(effectiveLearnerId, domainId);
+    res.json(roadmap);
+  } catch (err: any) {
+    const status = err.statusCode || (err.message?.includes('not found') ? 404 : 500);
+    res.status(status).json({ error: err.message || 'Error generating personalized roadmap' });
+  }
+});
+
+// 2. Get current primary roadmap action & progress summary for a learner
+apiRouter.get('/roadmap/:learnerId/current', (req, res) => {
+  try {
+    const { effectiveLearnerId, forbidden } = resolveRoadmapRequester(req, req.params.learnerId);
+    if (forbidden) {
+      return res.status(403).json({
+        error: 'Forbidden: Learners cannot access another learner\'s personalized roadmap.',
+      });
+    }
+
+    const domainId = req.query.domain as DomainId | undefined;
+    const currentData = roadmapEngine.getCurrentAction(effectiveLearnerId, domainId);
+    res.json(currentData);
+  } catch (err: any) {
+    const status = err.statusCode || (err.message?.includes('not found') ? 404 : 500);
+    res.status(status).json({ error: err.message || 'Error fetching current roadmap action' });
+  }
+});
+
+// 3. Get specific concept roadmap detail for a learner
+apiRouter.get('/roadmap/:learnerId/concept/:conceptId', (req, res) => {
+  try {
+    const { effectiveLearnerId, forbidden } = resolveRoadmapRequester(req, req.params.learnerId);
+    if (forbidden) {
+      return res.status(403).json({
+        error: 'Forbidden: Learners cannot access another learner\'s personalized roadmap.',
+      });
+    }
+
+    const { conceptId } = req.params;
+    const item = roadmapEngine.getConceptDetail(effectiveLearnerId, conceptId);
+    res.json({
+      learnerId: effectiveLearnerId,
+      conceptId,
+      item,
+    });
+  } catch (err: any) {
+    const status = err.statusCode || (err.message?.includes('not found') ? 404 : 500);
+    res.status(status).json({ error: err.message || 'Error fetching roadmap concept detail' });
+  }
+});
+
 

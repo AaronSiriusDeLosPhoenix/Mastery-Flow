@@ -1445,4 +1445,111 @@ export interface MockExamStats {
   weakConceptsCount: number;
 }
 
+// ==========================================
+// 17. PERSONALIZED LEARNING ROADMAP ENTITIES
+// ==========================================
+
+export type RoadmapAction = RecommendationAction;
+
+export type RoadmapItemStatus = 'completed' | 'current' | 'upcoming' | 'blocked';
+
+export interface RoadmapItem {
+  conceptId: string;
+  conceptName: string;
+  conceptCode: string;
+  domainId: DomainId;
+  domainName: string;
+  category: string;
+  moduleId?: string;
+  moduleTitle?: string;
+  lessonId?: string;
+  lessonTitle?: string;
+  lessonCompleted?: boolean;
+  action: RoadmapAction;
+  status: RoadmapItemStatus;
+  priority: number;
+  priorityTier: string;
+  reason: string;
+  mastery: number;
+  bktKnowledge?: number;
+  irtAbility?: number;
+  forgettingRisk: number;
+  retention: number;
+  mlProbability?: number;
+  prerequisiteBlocked: boolean;
+  blockingPrerequisites: Array<{
+    conceptId: string;
+    conceptName: string;
+    currentMastery: number;
+    requiredThreshold: number;
+  }>;
+  prerequisites: Array<{
+    conceptId: string;
+    conceptName: string;
+    mastery: number;
+    satisfied: boolean;
+  }>;
+  dependentConcepts: Array<{
+    conceptId: string;
+    conceptName: string;
+  }>;
+  estimatedDifficulty: number;
+  attemptsCount: number;
+  recentAccuracy?: number;
+  daysSinceLastReview: number;
+  teacherOverrideActive?: boolean;
+  availableActivities: Array<{
+    type: 'lesson' | 'practice' | 'flashcards' | 'mock_exam' | 'tutor' | 'mindmap';
+    label: string;
+    lessonId?: string;
+    conceptId: string;
+  }>;
+}
+
+export interface RoadmapProgressSummary {
+  completed: number;
+  total: number;
+  percentage: number;
+  developing: number;
+  reviewNeeded: number;
+  prerequisiteBlocked: number;
+  upcoming: number;
+  completedLessons: number;
+  totalLessons: number;
+}
+
+export interface RoadmapCurrentAction {
+  conceptId: string;
+  conceptName: string;
+  action: RoadmapAction;
+  reason: string;
+  ctaLabel: string;
+  priorityTier: string;
+  lessonId?: string;
+  mastery: number;
+  bktKnowledge?: number;
+  irtAbility?: number;
+  forgettingRisk: number;
+  mlProbability?: number;
+  prerequisiteBlocked: boolean;
+}
+
+export interface PersonalizedRoadmapData {
+  learnerId: string;
+  learnerName: string;
+  domainId: DomainId;
+  domainName: string;
+  generatedAt: string;
+  mlAvailable: boolean;
+  progress: RoadmapProgressSummary;
+  currentAction: RoadmapCurrentAction;
+  items: RoadmapItem[];
+  curriculumOverview?: {
+    totalCurriculumConcepts: number;
+    totalCurriculumCompleted: number;
+    totalCurriculumPercentage: number;
+  };
+}
+
+
 

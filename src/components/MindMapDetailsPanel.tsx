@@ -18,6 +18,7 @@ import {
   TrendingUp,
   RotateCcw,
   Zap,
+  Compass,
 } from 'lucide-react';
 
 interface MindMapDetailsPanelProps {
@@ -27,6 +28,7 @@ interface MindMapDetailsPanelProps {
   onOpenSummaryNotes: (conceptId: string) => void;
   onOpenTutor: (conceptId: string) => void;
   onSelectNodeById: (nodeId: string) => void;
+  onOpenInRoadmap?: (conceptId: string) => void;
 }
 
 export const MindMapDetailsPanel: React.FC<MindMapDetailsPanelProps> = ({
@@ -36,6 +38,7 @@ export const MindMapDetailsPanel: React.FC<MindMapDetailsPanelProps> = ({
   onOpenSummaryNotes,
   onOpenTutor,
   onSelectNodeById,
+  onOpenInRoadmap,
 }) => {
   if (!node) return null;
 
@@ -339,6 +342,17 @@ export const MindMapDetailsPanel: React.FC<MindMapDetailsPanelProps> = ({
           >
             <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
             <span>Review Weak Prerequisite</span>
+          </button>
+        )}
+
+        {/* Section 21: Mind Map <-> Roadmap Connection */}
+        {onOpenInRoadmap && (node.type === 'concept' || node.conceptId) && (
+          <button
+            onClick={() => onOpenInRoadmap(node.conceptId || node.id)}
+            className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-xs transition-colors cursor-pointer"
+          >
+            <Compass className="w-3.5 h-3.5 text-indigo-600" />
+            <span>View This Concept in My Roadmap</span>
           </button>
         )}
       </div>
