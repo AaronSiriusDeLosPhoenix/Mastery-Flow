@@ -467,7 +467,18 @@ export async function runFullSystemAudit(): Promise<FullSystemAuditReport> {
     const validFeatures = features.names.length === 16 && features.values.every((v) => !isNaN(v) && isFinite(v));
     const validHybrid = mlPred.hybridMastery >= 0 && mlPred.hybridMastery <= 1;
 
-    const mlPassed = validProbability && validConfidence && validFeatures && validHybrid;
+    // Phase 8 verification: zero contradictory states (attemptCount=0 must have neutral 0.5 accuracy)
+    let contradictoryFeatures = 0;
+    for (const [lId] of store.learners.entries()) {
+      for (const c of store.concepts) {
+        const f = mlFeatureExtractor.extractFeatures(lId, c.id);
+        if (f.raw.attemptCount === 0 && (f.raw.overallAccuracy !== 0.5 || f.raw.recentAccuracy !== 0.5)) {
+          contradictoryFeatures++;
+        }
+      }
+    }
+
+    const mlPassed = validProbability && validConfidence && validFeatures && validHybrid && contradictoryFeatures === 0;
 
     checks.push({
       id: 'audit_machine_learning_layer',

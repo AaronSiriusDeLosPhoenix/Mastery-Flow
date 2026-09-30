@@ -681,22 +681,48 @@ export const StudentLearn: React.FC = () => {
                   {currentQuestion?.explanation}
                 </p>
 
-                {/* Evidence Engine Signals Grid */}
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 text-[10px] font-mono">
-                  <div className="bg-white/70 p-1.5 rounded-lg border border-slate-200/50">
-                    <span className="text-slate-400 block text-[9px]">Mastery Delta</span>
+                {/* Evidence & Multi-Model Learning Loop Update Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-200/60 text-[10px] font-mono tabular-nums">
+                  <div className="bg-white/80 p-2 rounded-lg border border-slate-200/60">
+                    <span className="text-slate-500 block text-[9px] font-sans font-semibold">Hybrid Mastery</span>
                     <span className="font-bold text-indigo-700">
                       {(attemptResult.masteryBefore * 100).toFixed(0)}% ➔{' '}
                       {(attemptResult.masteryAfter * 100).toFixed(0)}%
                     </span>
                   </div>
-                  <div className="bg-white/70 p-1.5 rounded-lg border border-slate-200/50">
-                    <span className="text-slate-400 block text-[9px]">Recommendation</span>
-                    <span className="font-bold text-purple-700 truncate block">
-                      {attemptResult.newRecommendation?.action}
+                  <div className="bg-white/80 p-2 rounded-lg border border-slate-200/60">
+                    <span className="text-slate-500 block text-[9px] font-sans font-semibold">BKT Knowledge</span>
+                    <span className="font-bold text-violet-700">
+                      {(((activeMastery?.bktMastery ?? attemptResult.masteryAfter) || 0) * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="bg-white/80 p-2 rounded-lg border border-slate-200/60">
+                    <span className="text-slate-500 block text-[9px] font-sans font-semibold">ML Prediction</span>
+                    <span className="font-bold text-indigo-700">
+                      {(((attemptResult.mlPrediction?.probability ?? activeMastery?.mlPrediction?.probability ?? attemptResult.masteryAfter) || 0) * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="bg-white/80 p-2 rounded-lg border border-slate-200/60">
+                    <span className="text-slate-500 block text-[9px] font-sans font-semibold">FSFR Retention</span>
+                    <span className="font-bold text-emerald-700">
+                      {(((attemptResult.retentionAfter ?? activeMastery?.retention ?? 0.85) || 0) * 100).toFixed(0)}%
                     </span>
                   </div>
                 </div>
+
+                {attemptResult.newRecommendation && (
+                  <div className="bg-white/85 p-2.5 rounded-lg border border-slate-200/70 text-[11px] space-y-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-600">Updated Next Action:</span>
+                      <span className="font-mono font-bold text-indigo-700">
+                        {attemptResult.newRecommendation.action} → {attemptResult.newRecommendation.conceptName}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-snug">
+                      {attemptResult.newRecommendation.reason}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>

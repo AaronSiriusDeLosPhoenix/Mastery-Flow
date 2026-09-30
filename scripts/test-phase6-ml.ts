@@ -2,6 +2,7 @@ import { store } from '../src/server/db/store.js';
 import { mlFeedbackEngine } from '../src/server/engine/mlFeedbackEngine.js';
 import { mlInferenceEngine } from '../src/server/engine/mlInferenceEngine.js';
 import { mlFeatureExtractor } from '../src/server/engine/mlFeatureExtractor.js';
+import { mlTrainer } from '../src/server/engine/mlTrainer.js';
 import { bktEngine, DEFAULT_BKT_CONFIG } from '../src/server/engine/bktEngine.js';
 import { computeHybridMastery } from '../src/server/engine/masteryEngine.js';
 import { calculateRetention } from '../src/server/engine/retentionEngine.js';
@@ -285,6 +286,97 @@ const learnerA = store.learners.get('student_a')!;
 const decision = selectNextAction(learnerA, store.concepts, store.config);
 assert(['ADVANCE', 'PRACTICE', 'REVIEW', 'CHALLENGE', 'REMEDIATE_PREREQUISITE', 'TEACHER_INTERVENTION'].includes(decision.action), 'Phase 5 Decision: Valid recommendation generated.');
 
+// ----------------------------------------------------
+// 14. PHASE 7: PRODUCTION SUPERVISED ML TRAINER & ZERO-LEAKAGE AUDIT
+// ----------------------------------------------------
+console.log('\n--- TEST GROUP 14: PHASE 7 SUPERVISED ML TRAINER & ZERO-LEAKAGE AUDIT ---');
+const constructedDataset = mlTrainer.constructDataset();
+assert(constructedDataset.length >= 6, `Constructed historical dataset has ${constructedDataset.length} temporal examples.`);
+for (let i = 1; i < constructedDataset.length; i++) {
+  const prevT = new Date(constructedDataset[i - 1].observationTimestamp).getTime();
+  const currT = new Date(constructedDataset[i].observationTimestamp).getTime();
+  assert(prevT <= currT, `Dataset example #${i} is chronologically ordered.`);
+}
+
+// Verify zero future MasteryState leakage when cutoffTimestamp is provided
+const origMastery = learnerA.conceptMasteries['arrays'].mastery;
+learnerA.conceptMasteries['arrays'].mastery = 0.999; // Mutate present-day final mastery
+const earlyCutoff = '2020-01-01T00:00:00Z';
+const historicalFeat = mlFeatureExtractor.extractFeatures('student_a', 'arrays', { cutoffTimestamp: earlyCutoff });
+assert(
+  historicalFeat.raw.previousMastery === 0.20 && historicalFeat.raw.attemptCount === 0,
+  'Historical feature extraction with cutoffTimestamp strictly ignores present-day final MasteryState (zero target leakage).'
+);
+learnerA.conceptMasteries['arrays'].mastery = origMastery;
+
+// Train Production Calibrated Logistic Regression
+const trainRes = mlTrainer.train({ epochs: 250, learningRate: 0.05, l2Lambda: 0.02 });
+assert(trainRes.weights.status === 'TRAINED', `Model trained status is TRAINED (samples=${trainRes.weights.sampleCount}).`);
+assert((trainRes.weights.trainSampleCount ?? 0) > 0, `Training sample count reported: ${trainRes.weights.trainSampleCount}`);
+assert(trainRes.weights.validationSampleCount > 0, `Validation sample count reported: ${trainRes.weights.validationSampleCount}`);
+assert((trainRes.weights.positiveCount ?? 0) > 0 && (trainRes.weights.negativeCount ?? 0) > 0, `Positive (${trainRes.weights.positiveCount}) and Negative (${trainRes.weights.negativeCount}) class counts reported.`);
+assert(trainRes.weights.featureList?.length === 16, 'All 16 canonical features persisted in model metadata.');
+assert(trainRes.weights.hyperparameters !== undefined, 'Hyperparameters persisted in model metadata.');
+assert(typeof trainRes.weights.validationMetrics.accuracy === 'number', `Holdout validation accuracy: ${trainRes.weights.validationMetrics.accuracy}`);
+assert(typeof trainRes.weights.validationMetrics.logLoss === 'number', `Holdout validation logLoss: ${trainRes.weights.validationMetrics.logLoss}`);
+
+// Test INSUFFICIENT_DATA guard in mlTrainer when historical attempts are empty
+const savedAttempts = store.attempts;
+const savedExams = store.examSessions;
+store.attempts = [];
+store.examSessions = [];
+const insufficientTrainRes = mlTrainer.train();
+assert(insufficientTrainRes.weights.status === 'INSUFFICIENT_DATA', 'Trainer explicitly reports INSUFFICIENT_DATA when historical attempts are insufficient.');
+assert(insufficientTrainRes.weights.validationMetrics.accuracy === undefined, 'Trainer never fabricates validation accuracy when data is insufficient.');
+store.attempts = savedAttempts;
+store.examSessions = savedExams;
+
+// Persist trained weights & verify inference engine
+mlInferenceEngine.setModelWeights(trainRes.weights);
+const livePred = mlInferenceEngine.predict('student_a', 'arrays');
+assert(livePred.probability >= 0.01 && livePred.probability <= 0.99, `Calibrated P(Concept Mastery) in [0,1]: ${livePred.probability}`);
+assert(livePred.topContributingFeatures.length > 0, 'Top contributing features returned by inference engine.');
+
+// ----------------------------------------------------
+// 15. PHASE 8: REAL DATA CONSISTENCY, FEATURE PIPELINE & LIVE ATTEMPT AUDIT
+// ----------------------------------------------------
+console.log('\n--- TEST GROUP 15: PHASE 8 REAL DATA CONSISTENCY & FEATURE PIPELINE AUDIT ---');
+let contradictoryStateCount = 0;
+let counterMismatchCount = 0;
+for (const [lId, learner] of store.learners.entries()) {
+  for (const concept of store.concepts) {
+    const cm = learner.conceptMasteries[concept.id];
+    if (!cm) continue;
+    if (cm.correctCount + cm.incorrectCount !== cm.attemptsCount) {
+      counterMismatchCount++;
+    }
+    const f = mlFeatureExtractor.extractFeatures(lId, concept.id);
+    if (f.raw.attemptCount === 0 && (f.raw.overallAccuracy !== 0.5 || f.raw.recentAccuracy !== 0.5)) {
+      contradictoryStateCount++;
+    }
+  }
+}
+assert(counterMismatchCount === 0, 'All learners and concepts have exact counter consistency (correctCount + incorrectCount === attemptsCount).');
+assert(contradictoryStateCount === 0, 'Zero contradictory feature states (attemptCount=0 never coexists with overallAccuracy=1.0).');
+
+// Verify unattempted concept extraction (0 attempts -> neutral 0.5 accuracy and 0.20 prior)
+const unattemptedFeat = mlFeatureExtractor.extractFeatures('unattempted_test_learner', 'graphs');
+assert(unattemptedFeat.raw.attemptCount === 0 && unattemptedFeat.raw.overallAccuracy === 0.5 && unattemptedFeat.raw.previousMastery === 0.20, 'Unattempted concept produces neutral 0.5 accuracy and 0.20 prior.');
+
+// Verify live attempt pipeline updates attemptCount BEFORE ML feature extraction
+const recQ = store.questions[0];
+const bforeFeat = mlFeatureExtractor.extractFeatures('student_c', recQ.conceptId);
+const attemptRes = store.recordAttempt('student_c', recQ.id, {
+  selectedOptionIndex: recQ.correctOptionIndex,
+  confidence: 0.90,
+  responseTimeSeconds: 18,
+  hintsUsed: 0,
+  retries: 0,
+});
+const afterFeat = mlFeatureExtractor.extractFeatures('student_c', recQ.conceptId);
+assert(afterFeat.raw.attemptCount === bforeFeat.raw.attemptCount + 1, `Live recordAttempt increments feature attemptCount (${bforeFeat.raw.attemptCount} -> ${afterFeat.raw.attemptCount}) prior to ML inference.`);
+assert(attemptRes.masteryAfter === store.learners.get('student_c')!.conceptMasteries[recQ.conceptId].mastery, 'recordAttempt returns updated 3-way Hybrid Mastery.');
+
 console.log('\n====================================================');
-console.log(`ALL PHASE 6 ML TESTS PASSED: ${passedCount} / ${totalCount} (100% SUCCESS)`);
+console.log(`ALL PHASE 6, 7 & 8 ML TESTS PASSED: ${passedCount} / ${totalCount} (100% SUCCESS)`);
 console.log('====================================================\n');

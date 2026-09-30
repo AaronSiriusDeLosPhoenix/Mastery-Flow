@@ -2,6 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { store } from '../db/store.js';
 import { calculateEvidence, updateMastery, updateUncertainty, computeHybridMastery } from './masteryEngine.js';
 import { mlInferenceEngine } from './mlInferenceEngine.js';
+import { mlFeatureExtractor } from './mlFeatureExtractor.js';
 import { mlFeedbackEngine } from './mlFeedbackEngine.js';
 import { bktEngine } from './bktEngine.js';
 import { learningPathEngine } from './learningPathEngine.js';
@@ -759,37 +760,108 @@ Return a strict JSON array conforming to:
       const totAtt = currentConceptMastery.attemptsCount + 1;
       const corAtt = currentConceptMastery.correctCount + (isCorrect ? 1 : 0);
       const incorAtt = currentConceptMastery.incorrectCount + (isCorrect ? 0 : 1);
+      const examEventTime = new Date().toISOString();
+      const attemptId = `att_exam_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-      // BKT Knowledge Tracing Update (Corbett & Anderson 1995)
+      // 1. Evaluate pending predictions strictly BEFORE recording this new exam outcome
+      mlFeedbackEngine.evaluatePendingPredictions({
+        learnerId,
+        conceptId: q.conceptId,
+        isCorrect,
+        antiGuessingTriggered: evidenceResult.antiGuessingTriggered,
+        confidence,
+        responseTimeSeconds: responseTime,
+        timestamp: examEventTime,
+        attemptId,
+        source: 'exam',
+      });
+
+      // 2. BKT Knowledge Tracing Update (Corbett & Anderson 1995)
       const currentBktState =
         currentConceptMastery.bktState ||
         bktEngine.createInitialState(q.conceptId, store.config.bktConfig);
       const updatedBktState = bktEngine.step(
         currentBktState,
         isCorrect,
-        new Date().toISOString(),
-        `att_exam_${Date.now()}`
+        examEventTime,
+        attemptId,
+        {
+          confidence,
+          antiGuessingTriggered: evidenceResult.antiGuessingTriggered,
+          hintsUsed: 0,
+          responseTimeSeconds: responseTime,
+        }
       );
       const bktMastery = updatedBktState.pKnowledge;
 
-      // PHASE 8: ML Feature extraction & hybrid prediction (Bayesian + BKT + ML)
-      const mlPred = mlInferenceEngine.predict(learnerId, q.conceptId);
-      const hybridMastery = computeHybridMastery(mAfter, mlPred.probability, store.config, bktMastery);
+      // 3. Record Attempt in audit log BEFORE ML feature extraction so new attempt is included
+      const attempt: Attempt = {
+        id: attemptId,
+        learnerId,
+        domainId: q.subjectId,
+        questionId: q.questionId,
+        conceptId: q.conceptId,
+        selectedOptionIndex: selectedIndex,
+        isCorrect,
+        confidence,
+        responseTimeSeconds: responseTime,
+        hintsUsed: 0,
+        retries: 0,
+        timestamp: examEventTime,
+        evidenceScore: evidenceResult.evidenceScore,
+        questionType: (q.questionType === 'Analysis' ? 'Understanding' : q.questionType) as any,
+        questionFormat: 'MCQ',
+        difficulty: q.difficulty,
+        bloomLevel: q.bloomLevel,
+        readingLevelUsed: learner.preferredReadingLevel,
+        languageUsed: learner.preferredLanguage,
+        antiGuessingTriggered: evidenceResult.antiGuessingTriggered,
+        antiGuessingReason: evidenceResult.antiGuessingReason,
+      };
 
-      const updatedMastery = {
+      learner.recentAttempts.push(attempt);
+      store.attempts.push(attempt);
+
+      // Update provisional MasteryState so mlFeatureExtractor sees updated BKT & Bayesian priors
+      const provisionalMastery = {
         ...currentConceptMastery,
-        mastery: hybridMastery,
+        mastery: mAfter,
         uncertainty: uAfter,
-        retention: hybridMastery,
+        retention: mAfter,
         bktState: updatedBktState,
         bktMastery,
         attemptsCount: totAtt,
         correctCount: corAtt,
         incorrectCount: incorAtt,
-        lastAttemptAt: new Date().toISOString(),
-        lastReviewedAt: new Date().toISOString(),
+        averageConfidence:
+          (currentConceptMastery.averageConfidence * currentConceptMastery.attemptsCount + confidence) /
+          totAtt,
+        averageResponseTime:
+          (currentConceptMastery.averageResponseTime * currentConceptMastery.attemptsCount + responseTime) /
+          totAtt,
+        lastAttemptAt: examEventTime,
+        lastReviewedAt: examEventTime,
         daysSinceLastReview: 0,
-        mlPrediction: mlPred,
+      };
+      learner.conceptMasteries[q.conceptId] = provisionalMastery;
+
+      // 4. PHASE 8: ML Feature extraction & hybrid prediction (Bayesian + BKT + ML) on updated state
+      const featuresAtExam = mlFeatureExtractor.extractFeatures(learnerId, q.conceptId, {
+        customScaler: mlInferenceEngine.getActiveModelWeights().scaler,
+      });
+      const mlPred = mlInferenceEngine.predict(learnerId, q.conceptId, {
+        precomputedFeatures: featuresAtExam,
+      });
+      const hybridMastery = computeHybridMastery(mAfter, mlPred.probability, store.config, bktMastery);
+
+      const updatedMastery = {
+        ...provisionalMastery,
+        mastery: hybridMastery,
+        retention: hybridMastery,
+        mlPrediction: {
+          ...mlPred,
+          hybridMastery,
+        },
         status:
           hybridMastery >= store.config.masteryThreshold
             ? ('mastered' as const)
@@ -804,43 +876,17 @@ Return a strict JSON array conforming to:
       learnerMasteries[q.conceptId] = updatedMastery;
       store.masteryStates.set(learnerId, learnerMasteries);
 
-      // Audit Log Attempt
-      const attempt: Attempt = {
-        id: `att_exam_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        learnerId,
-        domainId: q.subjectId,
-        questionId: q.questionId,
-        conceptId: q.conceptId,
-        selectedOptionIndex: selectedIndex,
-        isCorrect,
-        confidence,
-        responseTimeSeconds: responseTime,
-        hintsUsed: 0,
-        retries: 0,
-        timestamp: new Date().toISOString(),
-        evidenceScore: evidenceResult.evidenceScore,
-        questionType: (q.questionType === 'Analysis' ? 'Understanding' : q.questionType) as any,
-        questionFormat: 'MCQ',
-        difficulty: q.difficulty,
-        bloomLevel: q.bloomLevel,
-        readingLevelUsed: learner.preferredReadingLevel,
-        languageUsed: learner.preferredLanguage,
-      };
-
-      learner.recentAttempts.push(attempt);
-      store.attempts.push(attempt);
-
-      // Continuous Learning: Evaluate pending predictions & recommendations for this concept
-      const examEventTime = new Date().toISOString();
-      mlFeedbackEngine.evaluatePendingPredictions({
+      // 5. Log post-exam prediction snapshot for future continuous evaluation
+      mlFeedbackEngine.logPrediction({
         learnerId,
         conceptId: q.conceptId,
-        isCorrect,
-        confidence,
-        responseTimeSeconds: responseTime,
-        timestamp: examEventTime,
-        attemptId: attempt.id,
-        source: 'exam',
+        predictedProbability: mlPred.probability,
+        predictedCategory: mlPred.category,
+        confidence: mlPred.confidence,
+        featureSnapshot: featuresAtExam.raw,
+        normalizedSnapshot: featuresAtExam.normalized,
+        modelVersion: mlPred.modelVersion,
+        predictedAt: examEventTime,
       });
 
       mlFeedbackEngine.evaluatePendingRecommendations({

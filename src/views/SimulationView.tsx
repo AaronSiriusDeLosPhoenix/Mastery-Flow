@@ -1,30 +1,59 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext.js';
 import { WhyNextCard } from '../components/WhyNextCard.js';
+import * as api from '../api/client.js';
 import {
-  GitCompare,
-  TrendingUp,
-  Brain,
-  HelpCircle,
-  Clock,
-  Lightbulb,
-  CheckCircle2,
-  XCircle,
   Play,
   RotateCcw,
-  Sparkles,
   ArrowRight,
+  Cpu,
+  Brain,
+  ShieldCheck,
 } from 'lucide-react';
-import { MasteryProgress } from '../components/MasteryProgress.js';
 
 export const SimulationView: React.FC = () => {
-  const { allLearners, concepts } = useApp();
+  const {
+    allLearners,
+    concepts,
+    setActiveStudentId,
+    setCurrentRole,
+    setActiveView,
+    setTargetConceptId,
+    refreshAll,
+  } = useApp();
 
   const studentA = allLearners.find((l) => l.id === 'student_a') || allLearners[0];
   const studentB = allLearners.find((l) => l.id === 'student_b') || allLearners[1];
+  const studentC = allLearners.find((l) => l.id === 'student_c') || allLearners[2];
 
   const [replayStep, setReplayStep] = useState<number>(0);
   const [isReplaying, setIsReplaying] = useState<boolean>(false);
+  const [activeScenario, setActiveScenario] = useState<'A' | 'B' | 'C' | 'D' | 'E'>('A');
+  const [simulatingDecay, setSimulatingDecay] = useState<boolean>(false);
+
+  const handleTriggerDecayScenario = async () => {
+    try {
+      setSimulatingDecay(true);
+      await api.simulateTimeGap('student_a', 18);
+      await refreshAll();
+    } catch (err) {
+      console.error('Failed to simulate time gap:', err);
+    } finally {
+      setSimulatingDecay(false);
+    }
+  };
+
+  const handleResetDemoState = async () => {
+    try {
+      setSimulatingDecay(true);
+      await api.resetDemo();
+      await refreshAll();
+    } catch (err) {
+      console.error('Failed to reset demo state:', err);
+    } finally {
+      setSimulatingDecay(false);
+    }
+  };
 
   const replayEvents = [
     {
@@ -260,6 +289,257 @@ export const SimulationView: React.FC = () => {
 
         </div>
 
+      </div>
+
+      {/* Controlled 5-Scenario Judge Demonstration (Scenarios A - E) */}
+      <div className="bg-white rounded-xl border border-slate-200/90 p-5 sm:p-6 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+          <div>
+            <div className="text-[11px] font-medium text-slate-500">
+              Controlled Judge Demonstration · Real System Outputs Across 5 Learner Archetypes
+            </div>
+            <h2 className="text-base font-bold text-slate-900 mt-0.5">
+              5-Scenario Adaptive Recommendation Verification
+            </h2>
+          </div>
+
+          <button
+            onClick={handleResetDemoState}
+            disabled={simulatingDecay}
+            className="text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer self-start sm:self-auto"
+          >
+            Reset Demo Baseline
+          </button>
+        </div>
+
+        {/* Scenario Selector Tabs */}
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+          {[
+            { id: 'A', label: 'Scenario A: Strong Learner', action: 'ADVANCE / CHALLENGE' },
+            { id: 'B', label: 'Scenario B: Struggling Learner', action: 'PRACTICE' },
+            { id: 'C', label: 'Scenario C: Prereq Deficit', action: 'REMEDIATE_PREREQUISITE' },
+            { id: 'D', label: 'Scenario D: Forgetting Risk', action: 'REVIEW' },
+            { id: 'E', label: 'Scenario E: Stuck / Override', action: 'TEACHER_INTERVENTION' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveScenario(tab.id as any)}
+              className={`p-3 rounded-lg text-left border transition-colors cursor-pointer ${
+                activeScenario === tab.id
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-200/80'
+              }`}
+            >
+              <span className="text-xs font-bold block">{tab.label}</span>
+              <span
+                className={`text-[10px] font-mono block mt-1 ${
+                  activeScenario === tab.id ? 'text-emerald-300' : 'text-slate-500'
+                }`}
+              >
+                → {tab.action}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Selected Scenario Live Details */}
+        {(() => {
+          if (activeScenario === 'A') {
+            const cm = studentA?.conceptMasteries['arrays'];
+            return (
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
+                <div className="space-y-1.5 max-w-2xl">
+                  <div className="font-bold text-slate-900 text-sm">
+                    Scenario A — Strong Learner ({studentA?.name} on Arrays / Theory of Computation)
+                  </div>
+                  <p className="text-slate-600 leading-relaxed">
+                    High Hybrid Mastery ({((cm?.mastery ?? 0.90) * 100).toFixed(0)}%), strong recent accuracy, and low forgetting risk (Retention: {((cm?.retention ?? 0.85) * 100).toFixed(0)}%, BKT: {((cm?.bktMastery ?? 0.90) * 100).toFixed(0)}%, ML: {((cm?.mlPrediction?.probability ?? 0.95) * 100).toFixed(0)}%).
+                  </p>
+                  <div className="font-mono text-emerald-700 font-bold">
+                    Live System Output: {studentA?.currentRecommendation?.action || 'ADVANCE'} → {studentA?.currentRecommendation?.conceptName}
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setCurrentRole('STUDENT');
+                    setActiveStudentId('student_a');
+                    setActiveView('student_dashboard');
+                  }}
+                  className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <span>Inspect {studentA?.name} Live</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            );
+          }
+
+          if (activeScenario === 'B') {
+            const cm = studentA?.conceptMasteries['gate_compiler'];
+            return (
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
+                <div className="space-y-1.5 max-w-2xl">
+                  <div className="font-bold text-slate-900 text-sm">
+                    Scenario B — Struggling Learner (Compiler Design / BST Practice Deficit)
+                  </div>
+                  <p className="text-slate-600 leading-relaxed">
+                    Prerequisites are satisfied, but concept mastery ({((cm?.mastery ?? 0.45) * 100).toFixed(0)}%) and recent accuracy are below the 75% mastery threshold (ML Predicted Mastery: {((cm?.mlPrediction?.probability ?? 0.42) * 100).toFixed(0)}%).
+                  </p>
+                  <div className="font-mono text-blue-700 font-bold">
+                    Live System Output: PRACTICE → Compiler Design (Targeted fluency building before advancing)
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setCurrentRole('STUDENT');
+                    setActiveStudentId('student_a');
+                    setTargetConceptId('gate_compiler');
+                    setActiveView('student_learn');
+                  }}
+                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <span>Open Compiler Design Practice</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            );
+          }
+
+          if (activeScenario === 'C') {
+            const cm = studentB?.conceptMasteries['upsc_fundamental_rights'];
+            return (
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
+                <div className="space-y-1.5 max-w-2xl">
+                  <div className="font-bold text-slate-900 text-sm">
+                    Scenario C — Prerequisite Problem ({studentB?.name})
+                  </div>
+                  <p className="text-slate-600 leading-relaxed">
+                    Target concept is blocked because prerequisite mastery ({((cm?.mastery ?? 0.48) * 100).toFixed(0)}%) is below the 70% DAG gating threshold. The engine prevents premature advancement and routes the learner to the foundational prerequisite.
+                  </p>
+                  <div className="font-mono text-amber-800 font-bold">
+                    Live System Output: {studentB?.currentRecommendation?.action || 'REMEDIATE_PREREQUISITE'} → {studentB?.currentRecommendation?.conceptName}
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setCurrentRole('STUDENT');
+                    setActiveStudentId('student_b');
+                    setActiveView('student_dashboard');
+                  }}
+                  className="px-4 py-2 rounded-lg bg-amber-700 hover:bg-amber-800 text-white font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <span>Switch to {studentB?.name}</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            );
+          }
+
+          if (activeScenario === 'D') {
+            return (
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
+                <div className="space-y-1.5 max-w-2xl">
+                  <div className="font-bold text-slate-900 text-sm">
+                    Scenario D — Forgetting Risk (18-Day Spaced Retrieval Decay)
+                  </div>
+                  <p className="text-slate-600 leading-relaxed">
+                    Even when historical BKT and ML mastery are strong (≥80%), an 18-day practice gap causes FSFR retention (R = M × exp(-λ × Δt)) to drop below the 65% retention threshold, switching the recommendation to REVIEW.
+                  </p>
+                  <div className="font-mono text-amber-700 font-bold">
+                    Live System Output after 18d Gap: REVIEW (Spaced Retrieval) · Current {studentA?.name} Action: {studentA?.currentRecommendation?.action}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={handleTriggerDecayScenario}
+                    disabled={simulatingDecay}
+                    className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold cursor-pointer"
+                  >
+                    {simulatingDecay ? 'Simulating...' : 'Trigger 18-Day Decay Live'}
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          const cmC = studentC?.conceptMasteries['school_newton_laws'];
+          return (
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
+              <div className="space-y-1.5 max-w-2xl">
+                <div className="font-bold text-slate-900 text-sm">
+                  Scenario E — Teacher Intervention ({studentC?.name} on Newton's Laws)
+                </div>
+                <p className="text-slate-600 leading-relaxed">
+                  Persistent difficulty detected: {cmC?.incorrectCount ?? 6} cumulative errors, heavy hint usage ({cmC?.totalHintsUsed ?? 7} hints), and consecutive failures trigger an immediate educator intervention alert.
+                </p>
+                <div className="font-mono text-rose-700 font-bold">
+                  Live System Output: {studentC?.currentRecommendation?.action || 'TEACHER_INTERVENTION'} → {studentC?.currentRecommendation?.conceptName}
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setCurrentRole('STUDENT');
+                  setActiveStudentId('student_c');
+                  setActiveView('student_dashboard');
+                }}
+                className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                <span>Switch to {studentC?.name}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* Model Disagreement & Multi-Signal Arbitration Demonstration */}
+      <div className="bg-white rounded-xl border border-slate-200/90 p-5 sm:p-6 shadow-xs space-y-4">
+        <div className="border-b border-slate-100 pb-3">
+          <div className="text-[11px] font-medium text-slate-500">
+            Multi-Model Arbitration · Why MasteryFlow Never Blindly Trusts a Single Model
+          </div>
+          <h2 className="text-base font-bold text-slate-900 mt-0.5">
+            How the System Resolves Model Disagreement
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
+            <div className="font-bold text-slate-900">
+              Case 1: High BKT Knowledge vs. High FSFR Forgetting Risk
+            </div>
+            <p className="text-slate-600 leading-relaxed">
+              <strong>Disagreement:</strong> BKT estimates strong historical acquisition (P(L_t) ≥ 85%), while FSFR shows retention has decayed below 65% after an 18-day gap.
+            </p>
+            <p className="text-slate-800 font-medium">
+              <strong>Resolution:</strong> The Decision Engine prioritizes memory consolidation and issues a <strong>REVIEW</strong> action rather than advancing prematurely on stale mastery.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
+            <div className="font-bold text-slate-900">
+              Case 2: High Raw Accuracy vs. Lower Supervised ML Prediction
+            </div>
+            <p className="text-slate-600 leading-relaxed">
+              <strong>Disagreement:</strong> A learner answers Easy items correctly using multiple hints and rapid retries. BKT increases slightly, but Logistic Regression ML predicts lower mastery due to weak transfer accuracy, hint dependency, and anti-guessing penalties.
+            </p>
+            <p className="text-slate-800 font-medium">
+              <strong>Resolution:</strong> 3-way Hybrid Mastery (45% Bayesian + 25% BKT + 30% ML) tempers false mastery inflation and recommends <strong>PRACTICE</strong> on independent transfer items.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
+            <div className="font-bold text-slate-900">
+              Case 3: ML Unavailable or Insufficient Historical Data
+            </div>
+            <p className="text-slate-600 leading-relaxed">
+              <strong>Disagreement / Edge State:</strong> During cold-start or if historical training data is insufficient, the supervised ML layer cannot claim empirical generalization.
+            </p>
+            <p className="text-slate-800 font-medium">
+              <strong>Resolution:</strong> `computeHybridMastery` automatically re-normalizes weights onto the Bayesian evidence and BKT signals so the learner experience never crashes or stalls.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Rationale Banner */}

@@ -129,6 +129,109 @@ export const TeacherDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Curriculum Bottlenecks & Class Struggle Analytics */}
+      {(() => {
+        const conceptStats = concepts
+          .map((c) => {
+            const learnerStates = allLearners
+              .map((l) => l.conceptMasteries[c.id])
+              .filter((m) => m && m.attemptsCount > 0);
+            if (learnerStates.length === 0) return null;
+            const avgConceptMastery =
+              learnerStates.reduce((acc, m) => acc + m.mastery, 0) / learnerStates.length;
+            const avgConceptRetention =
+              learnerStates.reduce((acc, m) => acc + m.retention, 0) / learnerStates.length;
+            const totalErrors = learnerStates.reduce((acc, m) => acc + m.incorrectCount, 0);
+            const strugglingCount = learnerStates.filter((m) => m.mastery < 0.55).length;
+            const dependentCount = concepts.filter((other) =>
+              other.prerequisites.includes(c.id)
+            ).length;
+            return {
+              concept: c,
+              avgConceptMastery,
+              avgConceptRetention,
+              totalErrors,
+              strugglingCount,
+              dependentCount,
+            };
+          })
+          .filter(Boolean)
+          .sort((a, b) => (a!.avgConceptMastery - b!.avgConceptMastery))
+          .slice(0, 6);
+
+        if (conceptStats.length === 0) return null;
+
+        return (
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div>
+                <span className="text-[11px] font-medium text-slate-500">
+                  Curriculum Diagnostic · Where the Class Is Struggling
+                </span>
+                <h3 className="text-base font-bold text-slate-900 mt-0.5">
+                  Concept Bottlenecks & Prerequisite Gate Impact
+                </h3>
+              </div>
+              <span className="text-xs text-slate-500">
+                Sorted by lowest cohort hybrid mastery
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {conceptStats.map((stat) => {
+                if (!stat) return null;
+                const isBottleneck = stat.avgConceptMastery < 0.60;
+                return (
+                  <div
+                    key={stat.concept.id}
+                    className={`p-4 rounded-2xl border ${
+                      isBottleneck
+                        ? 'bg-amber-50/40 border-amber-200/90'
+                        : 'bg-slate-50 border-slate-200/80'
+                    } space-y-2.5`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-bold text-slate-900 block">
+                          {stat.concept.name}
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          {stat.concept.category} · Gates {stat.dependentCount} downstream concept{stat.dependentCount === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      <span
+                        className={`text-sm font-black font-mono tabular-nums ${
+                          isBottleneck ? 'text-amber-800' : 'text-slate-800'
+                        }`}
+                      >
+                        {(stat.avgConceptMastery * 100).toFixed(0)}%
+                      </span>
+                    </div>
+
+                    <div className="w-full h-1.5 bg-slate-200/80 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${
+                          isBottleneck ? 'bg-amber-600' : 'bg-blue-600'
+                        }`}
+                        style={{ width: `${Math.round(stat.avgConceptMastery * 100)}%` }}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-600 pt-1">
+                      <span>{stat.strugglingCount} struggling learners</span>
+                      <span>·</span>
+                      <span>{stat.totalErrors} cohort errors</span>
+                      <span>·</span>
+                      <span>Ret: {(stat.avgConceptRetention * 100).toFixed(0)}%</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Learners Roster Table */}
       <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4">
         

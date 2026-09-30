@@ -274,71 +274,104 @@ export const TeacherStudentDetail: React.FC = () => {
       </div>
 
       {/* PHASE 8: Faculty Machine Learning Diagnostic Panel */}
-      <div className="bg-white rounded-3xl border border-indigo-200/90 p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-200">
-              <Cpu className="w-4 h-4" />
+      {(() => {
+        const targetCid = learner.currentRecommendation?.conceptId || '';
+        const targetCm = learner.conceptMasteries[targetCid];
+        const targetMl = targetCm?.mlPrediction;
+        const targetBkt = targetCm?.bktMastery;
+        const modelVer = targetMl?.modelVersion || 'logreg-prod-v1.0';
+        const trainingStatus = modelVer.includes('baseline') ? 'FALLBACK' : 'TRAINED';
+        return (
+          <div className="bg-white rounded-3xl border border-indigo-200/90 p-6 shadow-xs space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-200">
+                  <Cpu className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Machine Learning Predictive Diagnostics</h3>
+                  <p className="text-xs text-slate-500">
+                    Calibrated Logistic Regression inference engine (L2 regularized, 16 canonical evidence features)
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
+                  Version: {modelVer}
+                </span>
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Status: {trainingStatus}
+                </span>
+              </div>
             </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Machine Learning Predictive Diagnostics</h3>
-              <p className="text-xs text-slate-500">
-                Calibrated Logistic Regression inference engine (L2 regularized, 16 canonical evidence features)
-              </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                  Hybrid Mastery Blending
+                </span>
+                <span className="font-bold text-slate-800 block mt-1">
+                  45% Bayesian / 25% BKT / 30% ML
+                </span>
+                <span className="text-[11px] text-slate-500 block mt-0.5 font-mono">
+                  Hybrid: {targetCm ? `${((targetMl?.hybridMastery ?? targetCm.mastery) * 100).toFixed(0)}%` : 'N/A'} · BKT: {targetBkt !== undefined ? `${(targetBkt * 100).toFixed(0)}%` : 'N/A'}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                  Target Concept ML Prediction
+                </span>
+                <span className="font-bold text-indigo-700 block mt-1 font-mono text-sm">
+                  {learner.currentRecommendation?.conceptName || 'Active Concept'}:{' '}
+                  {targetMl
+                    ? `${(targetMl.probability * 100).toFixed(0)}% (${targetMl.category})`
+                    : 'Calibrated from Evidence'}
+                </span>
+                <span className="text-[11px] text-slate-500 block mt-0.5">
+                  Action: <strong className="text-slate-700">{learner.currentRecommendation?.action || 'PRACTICE'}</strong> · Confidence: {targetMl ? `${(targetMl.confidence * 100).toFixed(0)}%` : '85%'}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                  Retention & Prerequisite Gate
+                </span>
+                <span className="font-bold text-slate-800 block mt-1 font-mono">
+                  Retention: {targetCm ? `${(targetCm.retention * 100).toFixed(0)}%` : 'N/A'}
+                </span>
+                <span className="text-[11px] text-slate-500 block mt-0.5 truncate">
+                  Prerequisites: {learner.currentRecommendation?.evidenceSummary?.prerequisiteStatus || (targetCm?.prerequisiteSatisfied ? 'Satisfied' : 'Blocked')}
+                </span>
+              </div>
             </div>
-          </div>
 
-          <div className="flex items-center space-x-2">
-            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-              Model Online
-            </span>
+            {targetMl?.topContributingFeatures && targetMl.topContributingFeatures.length > 0 && (
+              <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">
+                  Top Contributing Features:
+                </span>
+                {targetMl.topContributingFeatures.map((f, idx) => (
+                  <span
+                    key={idx}
+                    className={`inline-flex items-center space-x-1 text-[11px] px-2 py-0.5 rounded-md font-medium border ${
+                      f.direction === 'positive'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : 'bg-rose-50 text-rose-800 border-rose-200'
+                    }`}
+                  >
+                    <span>{f.name}</span>
+                    <span className="font-mono text-[10px] font-bold">
+                      ({f.impact >= 0 ? `+${f.impact.toFixed(2)}` : f.impact.toFixed(2)})
+                    </span>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-              Inference Algorithm
-            </span>
-            <span className="font-bold text-slate-800 block mt-1">
-              Supervised Logistic Regression
-            </span>
-            <span className="text-[11px] text-slate-500 block mt-0.5 font-mono">
-              P(mastery) = σ(b + Σ w_i · z_i)
-            </span>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-              Hybrid Mastery Blending
-            </span>
-            <span className="font-bold text-slate-800 block mt-1">
-              70% Bayesian / 30% ML Probability
-            </span>
-            <span className="text-[11px] text-slate-500 block mt-0.5">
-              Configurable via System Config
-            </span>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-              Target Concept ML Prediction
-            </span>
-            <span className="font-bold text-indigo-700 block mt-1 font-mono text-sm">
-              {learner.currentRecommendation?.conceptName || 'Active Concept'}:{' '}
-              {learner.conceptMasteries[learner.currentRecommendation?.conceptId || '']?.mlPrediction
-                ? `${(learner.conceptMasteries[learner.currentRecommendation?.conceptId || ''].mlPrediction!.probability * 100).toFixed(0)}% (${learner.conceptMasteries[learner.currentRecommendation?.conceptId || ''].mlPrediction!.category})`
-                : 'Calibrated from Evidence'}
-            </span>
-            <span className="text-[11px] text-slate-500 block mt-0.5">
-              Confidence:{' '}
-              {learner.conceptMasteries[learner.currentRecommendation?.conceptId || '']?.mlPrediction
-                ? `${(learner.conceptMasteries[learner.currentRecommendation?.conceptId || ''].mlPrediction!.confidence * 100).toFixed(0)}%`
-                : '85%'}
-            </span>
-          </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* Completed Mock Examinations Audit (Phase 5) */}
       <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4">

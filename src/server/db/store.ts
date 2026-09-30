@@ -121,6 +121,9 @@ class DataStore {
 
   constructor() {
     this.initGemini();
+  }
+
+  public initStore(): void {
     const loaded = this.loadFromDisk();
     if (!loaded) {
       this.seedDatabase();
@@ -299,8 +302,11 @@ class DataStore {
       // If database was persisted prior to Phase 6, bootstrap Phase 6 ML feedback data structures
       if (!this.predictionRecords || this.predictionRecords.length === 0) {
         this.seedPhase6MLFeedback();
-        this.schedulePersist();
       }
+
+      // Reconcile learner counters, timestamps, BKT states, and ML predictions across loaded state
+      this.reconcileLearnerDataAndML();
+      this.schedulePersist();
 
       console.log(
         `[DataStore] Loaded ${this.users.size} users, ${this.learners.size} learners, ${this.attempts.length} attempts, ${this.examSessions.length} exams from disk.`
@@ -683,6 +689,21 @@ class DataStore {
     const totalAttempts = currentConceptMastery.attemptsCount + 1;
     const correctAttempts = currentConceptMastery.correctCount + (isCorrect ? 1 : 0);
     const incorrectAttempts = currentConceptMastery.incorrectCount + (isCorrect ? 0 : 1);
+    const fcEventTime = new Date().toISOString();
+    const attemptId = `att_fc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+    // 1b. Continuous Learning Feedback: Evaluate pending predictions strictly BEFORE this new flashcard outcome
+    mlFeedbackEngine.evaluatePendingPredictions({
+      learnerId,
+      conceptId: card.conceptId,
+      isCorrect,
+      antiGuessingTriggered: evidenceResult.antiGuessingTriggered,
+      confidence,
+      responseTimeSeconds,
+      timestamp: fcEventTime,
+      attemptId,
+      source: 'flashcard',
+    });
 
     // BKT Knowledge Tracing Update (Corbett & Anderson 1995)
     const currentBktState =
@@ -691,20 +712,50 @@ class DataStore {
     const updatedBktState = bktEngine.step(
       currentBktState,
       isCorrect,
-      new Date().toISOString(),
-      `att_fc_${Date.now()}`
+      fcEventTime,
+      attemptId,
+      {
+        confidence,
+        antiGuessingTriggered: evidenceResult.antiGuessingTriggered,
+        hintsUsed,
+        responseTimeSeconds,
+      }
     );
     const bktMastery = updatedBktState.pKnowledge;
 
-    // PHASE 8: ML Feature extraction & hybrid prediction (Bayesian + BKT + ML)
-    const mlPred = mlInferenceEngine.predict(learnerId, card.conceptId);
-    const hybridMastery = computeHybridMastery(masteryAfter, mlPred.probability, this.config, bktMastery);
+    // 3. Store Attempt in audit log BEFORE ML feature extraction so new attempt is included
+    const attempt: Attempt = {
+      id: attemptId,
+      learnerId,
+      domainId: card.subjectId,
+      questionId: virtualQuestion.id,
+      conceptId: card.conceptId,
+      selectedOptionIndex: isCorrect ? 0 : 1,
+      isCorrect,
+      confidence,
+      responseTimeSeconds,
+      hintsUsed,
+      retries,
+      timestamp: fcEventTime,
+      evidenceScore: evidenceResult.evidenceScore,
+      questionType: virtualQuestion.questionType,
+      difficulty: card.difficulty,
+      bloomLevel: virtualQuestion.bloomLevel,
+      readingLevelUsed: learner.preferredReadingLevel,
+      languageUsed: learner.preferredLanguage,
+      antiGuessingTriggered: evidenceResult.antiGuessingTriggered,
+      antiGuessingReason: evidenceResult.antiGuessingReason,
+    };
 
-    const updatedConceptMastery: MasteryState = {
+    learner.recentAttempts.push(attempt);
+    this.attempts.push(attempt);
+
+    // Update provisional MasteryState so mlFeatureExtractor sees updated BKT & counters
+    const provisionalConceptMastery: MasteryState = {
       ...currentConceptMastery,
-      mastery: hybridMastery,
+      mastery: masteryAfter,
       uncertainty: uncertaintyAfter,
-      retention: hybridMastery,
+      retention: masteryAfter,
       bktState: updatedBktState,
       bktMastery,
       attemptsCount: totalAttempts,
@@ -719,10 +770,29 @@ class DataStore {
         totalAttempts,
       totalHintsUsed: currentConceptMastery.totalHintsUsed + hintsUsed,
       totalRetries: currentConceptMastery.totalRetries + retries,
-      lastAttemptAt: new Date().toISOString(),
-      lastReviewedAt: new Date().toISOString(),
+      lastAttemptAt: fcEventTime,
+      lastReviewedAt: fcEventTime,
       daysSinceLastReview: 0,
-      mlPrediction: mlPred,
+    };
+    learner.conceptMasteries[card.conceptId] = provisionalConceptMastery;
+
+    // PHASE 8: ML Feature extraction & hybrid prediction (Bayesian + BKT + ML) on updated state
+    const featuresAtFc = mlFeatureExtractor.extractFeatures(learnerId, card.conceptId, {
+      customScaler: mlInferenceEngine.getActiveModelWeights().scaler,
+    });
+    const mlPred = mlInferenceEngine.predict(learnerId, card.conceptId, {
+      precomputedFeatures: featuresAtFc,
+    });
+    const hybridMastery = computeHybridMastery(masteryAfter, mlPred.probability, this.config, bktMastery);
+
+    const updatedConceptMastery: MasteryState = {
+      ...provisionalConceptMastery,
+      mastery: hybridMastery,
+      retention: hybridMastery,
+      mlPrediction: {
+        ...mlPred,
+        hybridMastery,
+      },
       status:
         hybridMastery >= this.config.masteryThreshold
           ? 'mastered'
@@ -737,42 +807,17 @@ class DataStore {
     learnerMasteries[card.conceptId] = updatedConceptMastery;
     this.masteryStates.set(learnerId, learnerMasteries);
 
-    // 3. Store Attempt in audit log
-    const attempt: Attempt = {
-      id: `att_fc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      learnerId,
-      domainId: card.subjectId,
-      questionId: virtualQuestion.id,
-      conceptId: card.conceptId,
-      selectedOptionIndex: isCorrect ? 0 : 1,
-      isCorrect,
-      confidence,
-      responseTimeSeconds,
-      hintsUsed,
-      retries,
-      timestamp: new Date().toISOString(),
-      evidenceScore: evidenceResult.evidenceScore,
-      questionType: virtualQuestion.questionType,
-      difficulty: card.difficulty,
-      bloomLevel: virtualQuestion.bloomLevel,
-      readingLevelUsed: learner.preferredReadingLevel,
-      languageUsed: learner.preferredLanguage,
-    };
-
-    learner.recentAttempts.push(attempt);
-    this.attempts.push(attempt);
-
-    // Continuous Learning Feedback: Evaluate pending predictions & recommendations from flashcard outcome
-    const fcEventTime = new Date().toISOString();
-    mlFeedbackEngine.evaluatePendingPredictions({
+    // Log post-flashcard prediction snapshot for future evaluation
+    mlFeedbackEngine.logPrediction({
       learnerId,
       conceptId: card.conceptId,
-      isCorrect,
-      confidence,
-      responseTimeSeconds,
-      timestamp: fcEventTime,
-      attemptId: attempt.id,
-      source: 'flashcard',
+      predictedProbability: mlPred.probability,
+      predictedCategory: mlPred.category,
+      confidence: mlPred.confidence,
+      featureSnapshot: featuresAtFc.raw,
+      normalizedSnapshot: featuresAtFc.normalized,
+      modelVersion: mlPred.modelVersion,
+      predictedAt: fcEventTime,
     });
 
     mlFeedbackEngine.evaluatePendingRecommendations({
@@ -782,7 +827,7 @@ class DataStore {
       actionTaken: 'REVIEW',
       isCorrect,
       masteryBefore,
-      masteryAfter,
+      masteryAfter: hybridMastery,
       retentionBefore: currentConceptMastery.retention,
       retentionAfter: hybridMastery,
     });
@@ -796,8 +841,8 @@ class DataStore {
       lessonId: card.lessonId,
       conceptId: card.conceptId,
       title: `Flashcard: ${card.conceptName}`,
-      description: `Active recall test (${recallLevel.toUpperCase()}). Evidence score: ${(evidenceResult.evidenceScore * 100).toFixed(0)}%. Mastery: ${(masteryBefore * 100).toFixed(0)}% → ${(masteryAfter * 100).toFixed(0)}%.`,
-      timestamp: new Date().toISOString(),
+      description: `Active recall test (${recallLevel.toUpperCase()}). Evidence score: ${(evidenceResult.evidenceScore * 100).toFixed(0)}%. Mastery: ${(masteryBefore * 100).toFixed(0)}% → ${(hybridMastery * 100).toFixed(0)}%.`,
+      timestamp: fcEventTime,
       meta: {
         flashcardId: card.id,
         recallLevel,
@@ -806,14 +851,38 @@ class DataStore {
       },
     });
 
-    // 5. Recompute overall learner metrics
+    // 5. Recompute overall learner metrics & adaptive recommendation
     this.recomputeOverallMetrics(learner);
+    const domainConcepts = this.getConceptsByDomain(card.subjectId);
+    const decision = selectNextAction(
+      learner,
+      domainConcepts.length > 0 ? domainConcepts : this.concepts,
+      this.config,
+      card.conceptId
+    );
+    const newRecommendation: Recommendation = {
+      id: `rec_fc_${Date.now()}`,
+      learnerId: learner.id,
+      domainId: card.subjectId,
+      action: decision.action,
+      conceptId: decision.conceptId,
+      conceptName: decision.conceptName,
+      reason: decision.reason,
+      stepFired: decision.stepFired,
+      evidenceSummary: decision.evidenceSummary,
+      timestamp: fcEventTime,
+    };
+    learner.currentRecommendation = newRecommendation;
+    learner.recommendationHistory.push(newRecommendation);
+    this.recommendations.push(newRecommendation);
+    mlFeedbackEngine.logRecommendation(newRecommendation);
+
     this.schedulePersist();
 
     return {
       evidenceScore: evidenceResult.evidenceScore,
       masteryBefore,
-      masteryAfter,
+      masteryAfter: hybridMastery,
       uncertaintyBefore,
       uncertaintyAfter,
       isCorrect,
@@ -1150,7 +1219,11 @@ class DataStore {
 
     const mayaMasteries: Record<string, MasteryState> = {};
     for (const c of this.concepts) {
-      const score = c.id === 'school_newton_laws' ? 0.35 : 0.40;
+      const isNewton = c.id === 'school_newton_laws';
+      const score = isNewton ? 0.35 : 0.40;
+      const attCount = isNewton ? 8 : 4;
+      const corrCount = isNewton ? 2 : 1;
+      const incorrCount = attCount - corrCount;
       const state: MasteryState = {
         id: `ms_maya_${c.id}`,
         learnerId: 'student_c',
@@ -1160,13 +1233,13 @@ class DataStore {
         mastery: score,
         uncertainty: 0.55,
         retention: 0.30,
-        attemptsCount: c.id === 'school_newton_laws' ? 8 : 4,
-        correctCount: 2,
-        incorrectCount: 6,
+        attemptsCount: attCount,
+        correctCount: corrCount,
+        incorrectCount: incorrCount,
         averageConfidence: 0.45,
         averageResponseTime: 42,
-        totalHintsUsed: 7,
-        totalRetries: 4,
+        totalHintsUsed: isNewton ? 7 : 3,
+        totalRetries: isNewton ? 4 : 2,
         easyAccuracy: 0.50,
         mediumAccuracy: 0.30,
         hardAccuracy: 0.10,
@@ -1191,7 +1264,7 @@ class DataStore {
     studentC.conceptMasteries = mayaMasteries;
     this.masteryStates.set('student_c', mayaMasteries);
 
-    const attMaya: Attempt = {
+    const attMaya1: Attempt = {
       id: 'att_maya_1',
       learnerId: 'student_c',
       domainId: 'school_stem',
@@ -1203,7 +1276,7 @@ class DataStore {
       responseTimeSeconds: 45,
       hintsUsed: 2,
       retries: 2,
-      timestamp: new Date().toISOString(),
+      timestamp: new Date(Date.now() - 4 * 3600000).toISOString(),
       evidenceScore: 0.15,
       questionType: 'Application',
       questionFormat: 'NUMERICAL_ANALYSIS',
@@ -1212,7 +1285,17 @@ class DataStore {
       languageUsed: 'hi',
       readingLevelUsed: 'middle_school',
     };
-    studentC.recentAttempts = [attMaya, { ...attMaya, id: 'att_maya_2' }, { ...attMaya, id: 'att_maya_3' }];
+    const attMaya2: Attempt = {
+      ...attMaya1,
+      id: 'att_maya_2',
+      timestamp: new Date(Date.now() - 3 * 3600000).toISOString(),
+    };
+    const attMaya3: Attempt = {
+      ...attMaya1,
+      id: 'att_maya_3',
+      timestamp: new Date(Date.now() - 2 * 3600000).toISOString(),
+    };
+    studentC.recentAttempts = [attMaya1, attMaya2, attMaya3];
     this.attempts.push(...studentC.recentAttempts);
 
     const domainCConcepts = this.getConceptsByDomain(studentC.activeDomainId);
@@ -1822,6 +1905,134 @@ class DataStore {
     ];
 
     this.seedPhase6MLFeedback();
+    this.reconcileLearnerDataAndML();
+  }
+
+  /**
+   * PHASE 8: Reconciles learner data consistency, fixes stale/contradictory counters or duplicate timestamps,
+   * trains/hydrates the supervised ML model, and populates BKT & ML predictions across all learners.
+   */
+  public reconcileLearnerDataAndML(): void {
+    // 1. Ensure strictly unique timestamps across sequential attempts for the same (learnerId, conceptId)
+    const byLearnerConcept = new Map<string, Attempt[]>();
+    for (const att of this.attempts) {
+      const key = `${att.learnerId}_${att.conceptId}`;
+      if (!byLearnerConcept.has(key)) byLearnerConcept.set(key, []);
+      byLearnerConcept.get(key)!.push(att);
+    }
+    for (const [, list] of byLearnerConcept.entries()) {
+      list.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      for (let i = 1; i < list.length; i++) {
+        const prevTime = new Date(list[i - 1].timestamp).getTime();
+        const currTime = new Date(list[i].timestamp).getTime();
+        if (currTime <= prevTime) {
+          list[i].timestamp = new Date(prevTime + 60000).toISOString();
+        }
+      }
+    }
+
+    // 2. Reconcile MasteryState counters so correctCount + incorrectCount === attemptsCount
+    // and ensure unattempted concepts (attemptsCount === 0) have neutral 0.5 accuracy defaults
+    for (const [learnerId, learner] of this.learners.entries()) {
+      const rawLearnerAttempts = this.attempts.filter((a) => a.learnerId === learnerId);
+      for (const concept of this.concepts) {
+        const m = learner.conceptMasteries[concept.id];
+        if (!m) continue;
+
+        const conceptRawAttempts = rawLearnerAttempts.filter((a) => a.conceptId === concept.id);
+        if (conceptRawAttempts.length > m.attemptsCount) {
+          m.attemptsCount = conceptRawAttempts.length;
+          m.correctCount = conceptRawAttempts.filter((a) => a.isCorrect).length;
+          m.incorrectCount = m.attemptsCount - m.correctCount;
+        } else if (m.attemptsCount > 0) {
+          m.correctCount = Math.max(0, Math.min(m.attemptsCount, m.correctCount));
+          m.incorrectCount = m.attemptsCount - m.correctCount;
+        } else {
+          m.attemptsCount = 0;
+          m.correctCount = 0;
+          m.incorrectCount = 0;
+          m.easyAccuracy = 0.5;
+          m.mediumAccuracy = 0.5;
+          m.hardAccuracy = 0.5;
+          m.transferAccuracy = 0.5;
+        }
+      }
+    }
+
+    const runMLAndBKTHydration = () => {
+      // 3. Train/recalibrate active supervised ML model on reconciled historical dataset
+      const trainRes = mlTrainer.train();
+      if (trainRes && trainRes.weights) {
+        mlInferenceEngine.setModelWeights(trainRes.weights);
+        this.modelRegistry.set(trainRes.weights.modelVersion, {
+          modelVersion: trainRes.weights.modelVersion,
+          lifecycleState: 'production',
+          trainedAt: trainRes.weights.trainedAt,
+          featureVersion: 'v1-canonical-16',
+          datasetVersion: 'dataset-v1.0',
+          sampleCount: trainRes.weights.sampleCount,
+          weights: trainRes.weights.weights,
+          bias: trainRes.weights.bias,
+          scaler: trainRes.weights.scaler,
+          classificationThreshold: 0.5,
+          validationMetrics: trainRes.weights.validationMetrics,
+          promotedAt: trainRes.weights.trainedAt,
+          promotionReason: 'Production model calibrated on verified historical dataset.',
+        });
+      }
+
+      // 4. Populate BKT state, ML prediction, and Hybrid Mastery for every learner's concepts
+      for (const [learnerId, learner] of this.learners.entries()) {
+        const rawLearnerAttempts = this.attempts.filter((a) => a.learnerId === learnerId);
+        for (const concept of this.concepts) {
+          const m = learner.conceptMasteries[concept.id];
+          if (!m) continue;
+
+          const conceptRawAttempts = rawLearnerAttempts.filter((a) => a.conceptId === concept.id);
+          if (conceptRawAttempts.length > 0) {
+            const trace = bktEngine.traceConcept(
+              learnerId,
+              concept.id,
+              rawLearnerAttempts,
+              this.config.bktConfig
+            );
+            m.bktState = trace.finalState;
+            m.bktMastery = trace.finalState.pKnowledge;
+          } else if (!m.bktState) {
+            const initBkt = bktEngine.createInitialState(concept.id, this.config.bktConfig);
+            if (m.attemptsCount > 0) {
+              initBkt.pKnowledge = Math.max(0.15, Math.min(0.98, m.mastery));
+              initBkt.attemptCount = m.attemptsCount;
+              initBkt.correctCount = m.correctCount;
+              initBkt.incorrectCount = m.incorrectCount;
+            }
+            m.bktState = initBkt;
+            m.bktMastery = initBkt.pKnowledge;
+          }
+
+          const mlPred = mlInferenceEngine.predict(learnerId, concept.id);
+          m.mlPrediction = mlPred;
+        }
+
+        const learnerMasteries = this.masteryStates.get(learnerId) || {};
+        for (const [cid, cm] of Object.entries(learner.conceptMasteries)) {
+          learnerMasteries[cid] = cm;
+        }
+        this.masteryStates.set(learnerId, learnerMasteries);
+      }
+    };
+
+    try {
+      runMLAndBKTHydration();
+    } catch {
+      queueMicrotask(() => {
+        try {
+          runMLAndBKTHydration();
+        } catch (err) {
+          console.error('[DataStore] Deferred ML/BKT hydration error:', err);
+        }
+      });
+    }
   }
 
   // ==========================================
@@ -2561,6 +2772,8 @@ Return strict JSON:
       transferAcc = isCorrect ? Math.min(1.0, transferAcc + 0.35) : Math.max(0.0, transferAcc - 0.35);
     }
 
+    const attemptId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
     // BKT Knowledge Tracing Update (Corbett & Anderson 1995)
     const currentBktState =
       currentConceptMastery.bktState ||
@@ -2568,8 +2781,8 @@ Return strict JSON:
     const updatedBktState = bktEngine.step(
       currentBktState,
       isCorrect,
-      new Date().toISOString(),
-      `att_${Date.now()}`,
+      attemptTimestamp,
+      attemptId,
       {
         confidence: submission.confidence,
         antiGuessingTriggered: evidenceResult.antiGuessingTriggered,
@@ -2579,14 +2792,87 @@ Return strict JSON:
     );
     const bktMastery = updatedBktState.pKnowledge;
 
-    // PHASE 8: ML Feature extraction & hybrid prediction (Bayesian + BKT + ML)
-    const mlPred = mlInferenceEngine.predict(learnerId, question.conceptId);
-    const hybridMastery = computeHybridMastery(masteryAfter, mlPred.probability, this.config, bktMastery);
+    // 13. Store Attempt BEFORE ML feature extraction so new attempt evidence is included in features
+    const attempt: Attempt = {
+      id: attemptId,
+      learnerId,
+      domainId: question.domainId,
+      questionId,
+      conceptId: question.conceptId,
+      selectedOptionIndex: submission.selectedOptionIndex,
+      userCodeAnswer: submission.userCodeAnswer,
+      isCorrect,
+      confidence: submission.confidence,
+      responseTimeSeconds: submission.responseTimeSeconds,
+      hintsUsed: submission.hintsUsed,
+      retries: submission.retries,
+      timestamp: attemptTimestamp,
+      evidenceScore: evidenceResult.evidenceScore,
+      questionType: question.questionType,
+      questionFormat: question.questionFormat,
+      difficulty: question.difficulty,
+      bloomLevel: question.bloomLevel,
+      readingLevelUsed: learner.preferredReadingLevel,
+      languageUsed: learner.preferredLanguage,
+      antiGuessingTriggered: evidenceResult.antiGuessingTriggered,
+      antiGuessingReason: evidenceResult.antiGuessingReason,
+    };
 
-    // CONTINUOUS LEARNING: Freeze feature snapshot at time T for future evaluation
+    learner.recentAttempts.push(attempt);
+    this.attempts.push(attempt);
+
+    // Update provisional MasteryState so mlFeatureExtractor sees updated BKT & Bayesian priors
+    const provisionalConceptMastery: MasteryState = {
+      ...currentConceptMastery,
+      mastery: masteryAfter,
+      uncertainty: uncertaintyAfter,
+      retention: retentionAfter,
+      bktState: updatedBktState,
+      bktMastery,
+      attemptsCount: totalAttempts,
+      correctCount: correctAttempts,
+      incorrectCount: incorrectAttempts,
+      averageConfidence:
+        (currentConceptMastery.averageConfidence * currentConceptMastery.attemptsCount +
+          submission.confidence) /
+        totalAttempts,
+      averageResponseTime:
+        (currentConceptMastery.averageResponseTime * currentConceptMastery.attemptsCount +
+          submission.responseTimeSeconds) /
+        totalAttempts,
+      totalHintsUsed: currentConceptMastery.totalHintsUsed + submission.hintsUsed,
+      totalRetries: currentConceptMastery.totalRetries + submission.retries,
+      easyAccuracy: Math.round(easyAcc * 100) / 100,
+      mediumAccuracy: Math.round(medAcc * 100) / 100,
+      hardAccuracy: Math.round(hardAcc * 100) / 100,
+      transferAccuracy: Math.round(transferAcc * 100) / 100,
+      bloomAccuracy: {
+        ...(currentConceptMastery.bloomAccuracy || {
+          Remember: 0.5,
+          Understand: 0.5,
+          Apply: 0.5,
+          Analyze: 0.5,
+          Evaluate: 0.5,
+          Create: 0.5,
+        }),
+        [bloomLevel]: Math.round(newBloomAcc * 100) / 100,
+      },
+      lastAttemptAt: attemptTimestamp,
+      lastReviewedAt: attemptTimestamp,
+      daysSinceLastReview: 0,
+    };
+    learner.conceptMasteries[question.conceptId] = provisionalConceptMastery;
+
+    // PHASE 8: ML Feature extraction & hybrid prediction (Bayesian + BKT + ML) on updated state
     const featuresAtT = mlFeatureExtractor.extractFeatures(learnerId, question.conceptId, {
       customScaler: mlInferenceEngine.getActiveModelWeights().scaler,
     });
+    const mlPred = mlInferenceEngine.predict(learnerId, question.conceptId, {
+      precomputedFeatures: featuresAtT,
+    });
+    const hybridMastery = computeHybridMastery(masteryAfter, mlPred.probability, this.config, bktMastery);
+
+    // CONTINUOUS LEARNING: Freeze feature snapshot at time T for future evaluation
     mlFeedbackEngine.logPrediction({
       learnerId,
       conceptId: question.conceptId,
@@ -2609,43 +2895,23 @@ Return strict JSON:
       masteryBefore,
       masteryAfter: hybridMastery,
       retentionBefore: currentConceptMastery.retention,
-      retentionAfter,
+      retentionAfter: hybridMastery,
     });
 
     const updatedConceptMastery: MasteryState = {
-      ...currentConceptMastery,
+      ...provisionalConceptMastery,
       mastery: hybridMastery,
-      uncertainty: uncertaintyAfter,
-      retention: retentionAfter,
-      bktState: updatedBktState,
-      bktMastery,
-      attemptsCount: totalAttempts,
-      correctCount: correctAttempts,
-      incorrectCount: incorrectAttempts,
-      averageConfidence: (currentConceptMastery.averageConfidence * currentConceptMastery.attemptsCount + submission.confidence) / totalAttempts,
-      averageResponseTime: (currentConceptMastery.averageResponseTime * currentConceptMastery.attemptsCount + submission.responseTimeSeconds) / totalAttempts,
-      totalHintsUsed: currentConceptMastery.totalHintsUsed + submission.hintsUsed,
-      totalRetries: currentConceptMastery.totalRetries + submission.retries,
-      easyAccuracy: Math.round(easyAcc * 100) / 100,
-      mediumAccuracy: Math.round(medAcc * 100) / 100,
-      hardAccuracy: Math.round(hardAcc * 100) / 100,
-      transferAccuracy: Math.round(transferAcc * 100) / 100,
-      bloomAccuracy: {
-        ...(currentConceptMastery.bloomAccuracy || {
-          Remember: 0.5,
-          Understand: 0.5,
-          Apply: 0.5,
-          Analyze: 0.5,
-          Evaluate: 0.5,
-          Create: 0.5,
-        }),
-        [bloomLevel]: Math.round(newBloomAcc * 100) / 100,
+      retention: hybridMastery,
+      mlPrediction: {
+        ...mlPred,
+        hybridMastery,
       },
-      lastAttemptAt: new Date().toISOString(),
-      lastReviewedAt: new Date().toISOString(),
-      daysSinceLastReview: 0,
-      mlPrediction: mlPred,
-      status: hybridMastery >= this.config.masteryThreshold ? 'mastered' : hybridMastery >= 0.5 ? 'developing' : 'struggling',
+      status:
+        hybridMastery >= this.config.masteryThreshold
+          ? 'mastered'
+          : hybridMastery >= 0.5
+          ? 'developing'
+          : 'struggling',
     };
 
     learner.conceptMasteries[question.conceptId] = updatedConceptMastery;
@@ -2654,40 +2920,16 @@ Return strict JSON:
     learnerMasteries[question.conceptId] = updatedConceptMastery;
     this.masteryStates.set(learnerId, learnerMasteries);
 
-    // 13. Store Attempt
-    const attempt: Attempt = {
-      id: `att_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      learnerId,
-      domainId: question.domainId,
-      questionId,
-      conceptId: question.conceptId,
-      selectedOptionIndex: submission.selectedOptionIndex,
-      userCodeAnswer: submission.userCodeAnswer,
-      isCorrect,
-      confidence: submission.confidence,
-      responseTimeSeconds: submission.responseTimeSeconds,
-      hintsUsed: submission.hintsUsed,
-      retries: submission.retries,
-      timestamp: new Date().toISOString(),
-      evidenceScore: evidenceResult.evidenceScore,
-      questionType: question.questionType,
-      questionFormat: question.questionFormat,
-      difficulty: question.difficulty,
-      bloomLevel: question.bloomLevel,
-      readingLevelUsed: learner.preferredReadingLevel,
-      languageUsed: learner.preferredLanguage,
-      antiGuessingTriggered: evidenceResult.antiGuessingTriggered,
-      antiGuessingReason: evidenceResult.antiGuessingReason,
-    };
-
-    learner.recentAttempts.push(attempt);
-    this.attempts.push(attempt);
-
     this.recomputeOverallMetrics(learner);
 
     // 4-12. Run Adaptive Decision Algorithm within Domain
     const domainConcepts = this.getConceptsByDomain(question.domainId);
-    const decision = selectNextAction(learner, domainConcepts.length > 0 ? domainConcepts : this.concepts, this.config, question.conceptId);
+    const decision = selectNextAction(
+      learner,
+      domainConcepts.length > 0 ? domainConcepts : this.concepts,
+      this.config,
+      question.conceptId
+    );
     const newRecommendation: Recommendation = {
       id: `rec_${Date.now()}`,
       learnerId: learner.id,
@@ -2698,7 +2940,7 @@ Return strict JSON:
       reason: decision.reason,
       stepFired: decision.stepFired,
       evidenceSummary: decision.evidenceSummary,
-      timestamp: new Date().toISOString(),
+      timestamp: attemptTimestamp,
     };
 
     learner.currentRecommendation = newRecommendation;
@@ -2714,7 +2956,7 @@ Return strict JSON:
       attempt,
       evidence: evidenceResult,
       masteryBefore,
-      masteryAfter,
+      masteryAfter: hybridMastery,
       uncertaintyBefore,
       uncertaintyAfter,
       newRecommendation,
@@ -2872,3 +3114,4 @@ function countRecentConsecutiveFailures(attempts: Attempt[]): number {
 }
 
 export const store = new DataStore();
+store.initStore();

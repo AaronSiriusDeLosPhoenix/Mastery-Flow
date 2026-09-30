@@ -805,25 +805,44 @@ export class MLFeedbackEngine {
     // Model comparison against current production model on the EXACT SAME holdout validation set (apples-to-apples)
     const currentProd = mlInferenceEngine.getActiveModelWeights();
     let prodValLogLoss = 0;
-    let prodValCorrect = 0;
+    let prodTp = 0, prodFp = 0, prodTn = 0, prodFn = 0;
 
     for (let i = 0; i < valCount; i++) {
       let zProd = currentProd.bias;
+      const snap = valSet[i].featureSnapshot;
       for (let j = 0; j < featureCount; j++) {
-        zProd += (currentProd.weights[CANONICAL_FEATURE_NAMES[j]] ?? 0) * X_val[i][j];
+        const fname = CANONICAL_FEATURE_NAMES[j];
+        const rawVal = snap[fname] ?? 0;
+        const pMean = currentProd.scaler?.means?.[fname] ?? means[fname];
+        const pStd =
+          currentProd.scaler?.stds?.[fname] && currentProd.scaler.stds[fname] > 0.001
+            ? currentProd.scaler.stds[fname]
+            : stds[fname];
+        const normVal = Math.max(-3.0, Math.min(3.0, (rawVal - pMean) / pStd));
+        zProd += (currentProd.weights[fname] ?? 0) * normVal;
       }
       const predProd = Math.max(0.001, Math.min(0.999, mlTrainer.sigmoid(zProd)));
       const actual = y_val[i];
       prodValLogLoss += -(actual * Math.log(predProd) + (1 - actual) * Math.log(1 - predProd));
-      if ((predProd >= 0.5 ? 1 : 0) === actual) prodValCorrect++;
+      const binProd = predProd >= 0.5 ? 1 : 0;
+      if (binProd === 1 && actual === 1) prodTp++;
+      else if (binProd === 1 && actual === 0) prodFp++;
+      else if (binProd === 0 && actual === 0) prodTn++;
+      else prodFn++;
     }
 
     const prodHoldoutLogLoss = Math.round((prodValLogLoss / valCount) * 1000) / 1000;
-    const prodHoldoutAccuracy = Math.round((prodValCorrect / valCount) * 1000) / 1000;
+    const prodHoldoutAccuracy = Math.round(((prodTp + prodTn) / valCount) * 1000) / 1000;
+    const prodPrecision = prodTp + prodFp > 0 ? prodTp / (prodTp + prodFp) : 0;
+    const prodRecall = prodTp + prodFn > 0 ? prodTp / (prodTp + prodFn) : 0;
+    const prodHoldoutF1 =
+      prodPrecision + prodRecall > 0
+        ? Math.round(((2 * prodPrecision * prodRecall) / (prodPrecision + prodRecall)) * 1000) / 1000
+        : 0;
 
     const logLossDiff = Math.round((logLoss - prodHoldoutLogLoss) * 1000) / 1000;
     const accuracyDiff = Math.round((accuracy - prodHoldoutAccuracy) * 1000) / 1000;
-    const f1Diff = Math.round((f1 - prodHoldoutAccuracy) * 1000) / 1000;
+    const f1Diff = Math.round((f1 - prodHoldoutF1) * 1000) / 1000;
 
     // Promotion gate: candidate must improve or match holdout LogLoss, or achieve equal/better holdout accuracy without severe degradation
     const promotable = logLoss <= prodHoldoutLogLoss || (logLoss <= prodHoldoutLogLoss + 0.15 && accuracy >= prodHoldoutAccuracy) || accuracy >= 0.50;
@@ -921,6 +940,14 @@ export class MLFeedbackEngine {
     candidate.promotedAt = new Date().toISOString();
     candidate.promotionReason = reason || `Promoted by ${promoterId} following holdout validation.`;
 
+    const evaluated = store.predictionRecords.filter(
+      (r) => r.evaluationStatus === 'evaluated' && r.actualOutcome !== undefined
+    );
+    const actualPositives = evaluated.filter((r) => r.actualOutcome === 1).length;
+    const actualNegatives = evaluated.filter((r) => r.actualOutcome === 0).length;
+    const valSamples = Math.max(2, Math.floor(candidate.sampleCount * 0.25));
+    const trainSamples = candidate.sampleCount - valSamples;
+
     const newProdWeights = {
       weights: candidate.weights,
       bias: candidate.bias,
@@ -929,21 +956,25 @@ export class MLFeedbackEngine {
       modelVersion: candidate.modelVersion,
       validationMetrics: candidate.validationMetrics,
       sampleCount: candidate.sampleCount,
-      validationSampleCount: Math.round(candidate.sampleCount * 0.25),
+      trainSampleCount: trainSamples,
+      validationSampleCount: valSamples,
+      positiveCount: actualPositives,
+      negativeCount: actualNegatives,
+      featureList: [...CANONICAL_FEATURE_NAMES],
       status: 'TRAINED' as const,
     };
 
     mlInferenceEngine.setModelWeights(newProdWeights);
 
-    // Update dataset metadata
+    // Update dataset metadata with exact ground-truth counts
     store.datasetMetadata = {
       datasetVersion: candidate.datasetVersion,
       generatedAt: new Date().toISOString(),
       totalEvaluatedSamples: candidate.sampleCount,
-      positiveSamples: Math.round(candidate.sampleCount * (candidate.validationMetrics.precision || 0.6)),
-      negativeSamples: candidate.sampleCount - Math.round(candidate.sampleCount * (candidate.validationMetrics.precision || 0.6)),
-      trainSamples: Math.round(candidate.sampleCount * 0.75),
-      validationSamples: Math.round(candidate.sampleCount * 0.25),
+      positiveSamples: actualPositives,
+      negativeSamples: actualNegatives,
+      trainSamples,
+      validationSamples: valSamples,
       featureVersion: candidate.featureVersion,
       targetDefinitionVersion: 'target-v1-independent-outcome',
     };

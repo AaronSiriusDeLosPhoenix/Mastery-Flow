@@ -38,7 +38,9 @@ export const WhyNextCard: React.FC<WhyNextCardProps> = ({
   const { action, conceptId, conceptName, reason, evidenceSummary, isOverridden, overrideDetails } =
     recommendation;
 
-  const mlPred = currentLearner?.conceptMasteries[conceptId]?.mlPrediction;
+  const conceptMasteryState = currentLearner?.conceptMasteries[conceptId];
+  const mlPred = conceptMasteryState?.mlPrediction;
+  const bktMastery = conceptMasteryState?.bktMastery;
 
   const getActionTheme = (act: RecommendationAction) => {
     switch (act) {
@@ -240,8 +242,8 @@ export const WhyNextCard: React.FC<WhyNextCardProps> = ({
                   <Cpu className="w-3.5 h-3.5" />
                 </div>
                 <div>
-                  <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                    <span>Machine Learning Predicted Mastery:</span>
+                  <span className="text-xs font-bold text-slate-900 flex flex-wrap items-center gap-1.5">
+                    <span>ML Predicted Mastery:</span>
                     <span className="text-indigo-700 font-mono">{(mlPred.probability * 100).toFixed(0)}%</span>
                     <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-md ${
                       mlPred.category === 'Mastered'
@@ -254,12 +256,26 @@ export const WhyNextCard: React.FC<WhyNextCardProps> = ({
                     }`}>
                       {mlPred.category}
                     </span>
+                    <span className="text-slate-400">·</span>
+                    <span className="text-[11px] text-slate-600">
+                      Hybrid: <strong className="font-mono text-slate-900">{((mlPred.hybridMastery ?? evidenceSummary.mastery) * 100).toFixed(0)}%</strong>
+                    </span>
+                    {bktMastery !== undefined && (
+                      <>
+                        <span className="text-slate-400">·</span>
+                        <span className="text-[11px] text-slate-600">
+                          BKT: <strong className="font-mono text-slate-900">{(bktMastery * 100).toFixed(0)}%</strong>
+                        </span>
+                      </>
+                    )}
                   </span>
                 </div>
               </div>
 
               <div className="flex items-center space-x-2 text-[10px] text-slate-500 font-medium">
                 <span>Model: <strong className="text-slate-700">{mlPred.modelVersion}</strong></span>
+                <span>·</span>
+                <span>Status: <strong className="text-emerald-700">{mlPred.modelVersion.includes('baseline') ? 'FALLBACK' : 'TRAINED'}</strong></span>
                 <span>·</span>
                 <span>Confidence: <strong className="text-slate-700">{(mlPred.confidence * 100).toFixed(0)}%</strong></span>
               </div>

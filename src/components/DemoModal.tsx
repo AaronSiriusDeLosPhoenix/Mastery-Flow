@@ -36,9 +36,9 @@ export const DemoModal: React.FC = () => {
   const demoSteps: DemoStepInfo[] = [
     {
       step: 1,
-      title: '1. Select Student A (Alex Rivera)',
-      description: 'Observe a high-performing learner with strong prerequisite foundations, high self-assessed confidence, and low hint reliance.',
-      actionLabel: 'Switch to Alex Rivera & Dashboard',
+      title: '1. The Problem: Static One-Size-Fits-All Learning',
+      description: 'Traditional learning systems give every learner the same fixed path. MasteryFlow builds a dynamic multi-model representation of each learner to personalize what they learn, practice, review, remediate, or challenge next.',
+      actionLabel: 'Open Alex Rivera (Scenario A — Strong Learner)',
       execute: () => {
         setCurrentRole('STUDENT');
         setActiveStudentId('student_a');
@@ -47,27 +47,30 @@ export const DemoModal: React.FC = () => {
     },
     {
       step: 2,
-      title: '2. Inspect the Learner Model',
-      description: 'See the multidimensional profile: historical mastery, uncertainty, retention, and per-concept status badges (Mastered vs Developing).',
-      actionLabel: 'View Concept Graph & Masteries',
+      title: '2. Student Dashboard: What Do I Know & What Am I Forgetting?',
+      description: 'Inspect the Student Dashboard answering: "What do I know?", "What am I forgetting?", "What should I do next?", and "Why am I being asked to do this?"',
+      actionLabel: 'Inspect Student Dashboard',
       execute: () => {
-        setActiveView('student_concepts');
+        setCurrentRole('STUDENT');
+        setActiveStudentId('student_a');
+        setActiveView('student_dashboard');
       },
     },
     {
       step: 3,
-      title: '3. Inspect Cold-Start Diagnostic',
-      description: 'MasteryFlow evaluates new learners across difficulties and prerequisite concepts to initialize baseline mastery and uncertainty without cold-start bias.',
-      actionLabel: 'Inspect Diagnostic View',
+      title: '3. Start a Learning Activity',
+      description: 'Enter the interactive practice and learning workspace on Compiler Design or Trees where lessons, AI summary notes, and adaptive questions are integrated.',
+      actionLabel: 'Start Learning Activity on Trees',
       execute: () => {
-        setActiveView('student_diagnostic');
+        setTargetConceptId('trees');
+        setActiveView('student_learn');
       },
     },
     {
       step: 4,
-      title: '4. Submit an Interactive Attempt',
-      description: 'Navigate to interactive problem solving where answers capture response time, confidence, hints used, and retry counts in real time.',
-      actionLabel: 'Go to Interactive Practice on Trees',
+      title: '4. Submit an Answer & Collect Multi-Signal Evidence',
+      description: 'When a learner submits an answer, the system records correctness, self-reported confidence, item difficulty, response duration, hint usage, and retry count.',
+      actionLabel: 'Open Interactive Assessment Item',
       execute: () => {
         setTargetConceptId('trees');
         setActiveView('student_learn');
@@ -75,111 +78,129 @@ export const DemoModal: React.FC = () => {
     },
     {
       step: 5,
-      title: '5. Multi-Signal Evidence Score (E)',
-      description: 'Evidence is mathematically calculated via: E = 0.45(correct) + 0.20(confidence) + 0.15(difficulty) + 0.10(speed) + 0.10(independence).',
-      actionLabel: 'View Practice Evaluation Panel',
+      title: '5. Evidence Collection & Anti-Guessing Filter',
+      description: 'Evidence is computed via E = 0.45(correct) + 0.20(confidence) + 0.15(difficulty) + 0.10(speed) + 0.10(independence), with 0.50x anti-guessing damping on rapid clicks (<3s) or repeated retries.',
+      actionLabel: 'Inspect Evidence Breakdown on Dashboard',
       execute: () => {
-        setActiveView('student_learn');
+        setActiveView('student_dashboard');
       },
     },
     {
       step: 6,
-      title: '6. Mastery & Uncertainty Updating',
-      description: 'Exponential smoothing (alpha=0.35) updates mastery incrementally while uncertainty shrinks upon consistent independent performance.',
-      actionLabel: 'View Updated Dashboard',
+      title: '6. Mastery Update & Exponential Smoothing',
+      description: 'Bayesian mastery updates incrementally via M_t = (1 - α)M_{t-1} + αE while model uncertainty shrinks with consistent independent performance.',
+      actionLabel: 'View Mastery Update on Dashboard',
       execute: () => {
         setActiveView('student_dashboard');
       },
     },
     {
       step: 7,
-      title: '7. "Why This Next?" Transparent Card',
-      description: 'Every recommendation is completely explainable. The system displays exact metrics, prerequisite status, and reasoning behind the recommendation.',
-      actionLabel: 'Inspect "Why This Next?" Card',
+      title: '7. BKT Knowledge Estimate (Sequential Acquisition)',
+      description: 'Corbett & Anderson (1995) 4-parameter Bayesian Knowledge Tracing estimates latent concept acquisition P(L_t) using prior, learn, guess, and slip parameters.',
+      actionLabel: 'View BKT Knowledge Estimate',
       execute: () => {
         setActiveView('student_dashboard');
       },
     },
     {
       step: 8,
-      title: '8. Prerequisite Dependency Graph Influence',
-      description: 'The prerequisite DAG prevents premature progression. Binary Search Trees and Graphs cannot be attempted unless Trees mastery meets the 70% threshold.',
-      actionLabel: 'Open Interactive Prerequisite DAG',
+      title: '8. IRT Ability vs. Item Difficulty Alignment',
+      description: 'Models estimated learner ability (θ) relative to item difficulty across Easy, Medium, Hard, and high-order Transfer problems.',
+      actionLabel: 'Inspect IRT Ability & Difficulty Profile',
       execute: () => {
-        setActiveView('student_concepts');
+        setActiveView('student_dashboard');
       },
     },
     {
       step: 9,
-      title: '9. Simulate Time Gap (18-Day Decay)',
-      description: 'Click "Simulate 18d Gap" in the top bar to simulate time passing. The Ebbinghaus forgetting model retention = mastery * exp(-decay * days) decays stored memory.',
-      actionLabel: 'Simulate 18-Day Gap on Alex',
-      execute: async () => {
+      title: '9. FSFR Forgetting Risk & Spaced Retrieval',
+      description: 'Models memory retention R(t) = M × exp(-λ × Δt) over days elapsed since last review to proactively detect forgetting risk before knowledge collapses.',
+      actionLabel: 'Inspect FSFR Forgetting Risk',
+      execute: () => {
         setActiveView('student_dashboard');
       },
     },
     {
       step: 10,
-      title: '10. Trigger Spaced REVIEW Action',
-      description: 'When retention drops below threshold despite strong historical mastery, the Decision Engine automatically issues a REVIEW action rather than ADVANCE.',
-      actionLabel: 'Observe REVIEW Recommendation',
+      title: '10. Supervised ML Mastery Probability (Logistic Regression)',
+      description: 'A calibrated L2-regularized Logistic Regression model predicts P(Mastery) ∈ [0,1] from 16 structured behavioral features without future or target leakage.',
+      actionLabel: 'Inspect ML Prediction & Feature Drivers',
       execute: () => {
         setActiveView('student_dashboard');
       },
     },
     {
       step: 11,
-      title: '11. Select Student B (Blake Chen)',
-      description: 'Now switch to Student B: has prerequisite deficits on Arrays & Recursion, high hint dependency, and frequent retries.',
-      actionLabel: 'Switch to Blake Chen',
+      title: '11. Hybrid Mastery & Model Disagreement Resolution',
+      description: 'Combines 45% Bayesian Evidence + 25% BKT + 30% Supervised ML into Hybrid Mastery, safely falling back to Bayesian + BKT if ML is unavailable.',
+      actionLabel: 'View Hybrid Mastery & Disagreement Resolution',
       execute: () => {
+        setActiveView('simulation');
+      },
+    },
+    {
+      step: 12,
+      title: '12. "Why This Next?" Explainable Recommendation',
+      description: 'Provides concise, non-causal, evidence-based explanations for why ADVANCE, PRACTICE, REVIEW, REMEDIATE_PREREQUISITE, CHALLENGE, or TEACHER_INTERVENTION was selected.',
+      actionLabel: 'Inspect "Why This Next?" Card',
+      execute: () => {
+        setActiveView('student_dashboard');
+      },
+    },
+    {
+      step: 13,
+      title: '13. Personalized Roadmap vs. Knowledge Mind Map',
+      description: 'The Adaptive Roadmap dynamically reorders the learner journey on the Dashboard, while the Mind Map visualizes the domain prerequisite DAG structure.',
+      actionLabel: 'Open Interactive Mind Map (Knowledge Structure)',
+      execute: () => {
+        setActiveView('student_mindmap');
+      },
+    },
+    {
+      step: 14,
+      title: '14. Change Learner Behavior (Scenarios A–E)',
+      description: 'Switch between Scenario A (Strong Learner), Scenario B (Struggling Practice), Scenario C (Prerequisite Deficit — Blake Chen), Scenario D (18-Day Forgetting Risk), and Scenario E (Stuck Learner — Maya Patel).',
+      actionLabel: 'Open 5-Scenario Judge Switcher',
+      execute: () => {
+        setActiveView('simulation');
+      },
+    },
+    {
+      step: 15,
+      title: '15. Demonstrate Live Recommendation Changes',
+      description: 'Switch to Student B (Blake Chen) or Student C (Maya Patel) to observe the engine dynamically change from ADVANCE to REMEDIATE_PREREQUISITE or TEACHER_INTERVENTION.',
+      actionLabel: 'Switch to Blake Chen (REMEDIATE_PREREQUISITE)',
+      execute: () => {
+        setCurrentRole('STUDENT');
         setActiveStudentId('student_b');
         setActiveView('student_dashboard');
       },
     },
     {
-      step: 12,
-      title: '12. Side-by-Side Two-Learner Simulation',
-      description: 'Inspect the dedicated Hackathon simulation comparison: Alex and Blake side-by-side with divergent learning pathways and replays.',
-      actionLabel: 'Open Two-Learner Simulation View',
-      execute: () => {
-        setActiveView('simulation');
-      },
-    },
-    {
-      step: 13,
-      title: '13. Divergent Recommendation Verification',
-      description: 'Even when both students obtain identical raw scores on a quiz, their divergent histories produce ADVANCE for Alex and REMEDIATE_PREREQUISITE for Blake.',
-      actionLabel: 'Compare Divergent Actions',
-      execute: () => {
-        setActiveView('simulation');
-      },
-    },
-    {
-      step: 14,
-      title: '14. Faculty Override Authority',
-      description: 'Switch to Teacher mode. Prof. Alistair Vance can inspect Blake Chen and override the system recommendation with reasoned clinical judgment.',
-      actionLabel: 'Switch to Teacher Dashboard',
+      step: 16,
+      title: '16. Open Teacher Dashboard & Intervention Audit',
+      description: 'Switch to Educator View (Prof. Alistair Vance) to inspect cohort bottlenecks, struggling learners, ML diagnostics, and immutable faculty overrides.',
+      actionLabel: 'Open Teacher Dashboard',
       execute: () => {
         setCurrentRole('TEACHER');
         setActiveView('teacher_dashboard');
       },
     },
     {
-      step: 15,
-      title: '15. Immutable Teacher Audit Log',
-      description: 'Every faculty override is captured in the permanent audit trail with timestamp, previous action, new action, and educator rationale.',
-      actionLabel: 'Inspect Student Detail & Audit Log',
+      step: 17,
+      title: '17. Show ML Model Health & Holdout Evaluation',
+      description: 'Inspect actual stored training/validation sample counts, holdout Accuracy, Precision, Recall, F1, Log Loss, confusion matrix, and 16 feature weights.',
+      actionLabel: 'Open ML Model Health & Evaluation Center',
       execute: () => {
-        setCurrentRole('TEACHER');
-        setActiveView('teacher_student_detail');
+        setActiveView('evaluation');
       },
     },
     {
-      step: 16,
-      title: '16. Automated Stress Test Center (All 6 Tests)',
-      description: 'Execute the comprehensive 6-scenario benchmark suite: transfer protection, anti-guessing resistance, prerequisite gating, retention decay, override audit, and path divergence.',
-      actionLabel: 'Run All 6 Stress Tests Live',
+      step: 18,
+      title: '18. Honest ML Limitations & Safe Fallback Verification',
+      description: 'Review explicit dataset size limitations (101 historical examples: 76 train / 25 holdout validation), class balance, and zero-crash fallback guarantees.',
+      actionLabel: 'View Limitations & Full System Audit',
       execute: () => {
         setActiveView('evaluation');
       },

@@ -347,7 +347,23 @@ export interface MLModelWeights {
     };
   };
   sampleCount: number;
+  trainSampleCount?: number;
   validationSampleCount: number;
+  positiveCount?: number;
+  negativeCount?: number;
+  trainPositiveCount?: number;
+  trainNegativeCount?: number;
+  valPositiveCount?: number;
+  valNegativeCount?: number;
+  featureList?: string[];
+  hyperparameters?: {
+    epochs: number;
+    learningRate: number;
+    l2Lambda: number;
+    classificationThreshold: number;
+    splitStrategy: string;
+  };
+  targetDefinition?: string;
   status: 'TRAINED' | 'INSUFFICIENT_DATA' | 'FALLBACK';
 }
 

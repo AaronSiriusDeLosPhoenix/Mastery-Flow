@@ -4,7 +4,8 @@ import {
   DEFAULT_FEATURE_SCALER,
   mlFeatureExtractor,
 } from './mlFeatureExtractor.js';
-import { mlTrainer } from './mlTrainer.js';
+import { computeHybridMastery } from './masteryEngine.js';
+import { mlTrainer, TARGET_CONSTRUCTION_SPEC } from './mlTrainer.js';
 import {
   MLEngineConfig,
   MLFeatureVector,
@@ -31,8 +32,13 @@ export class MLInferenceEngine {
       return this.currentWeights;
     }
 
-    // Check store / persistence
-    if (store.mlModelWeights) {
+    // Check store / persistence; if missing full Phase 7 metadata, re-calibrate on real dataset
+    if (
+      store.mlModelWeights &&
+      store.mlModelWeights.trainSampleCount !== undefined &&
+      store.mlModelWeights.positiveCount !== undefined &&
+      store.mlModelWeights.featureList !== undefined
+    ) {
       this.currentWeights = store.mlModelWeights;
       return this.currentWeights;
     }
@@ -42,6 +48,26 @@ export class MLInferenceEngine {
     if (trainResult && trainResult.weights) {
       this.currentWeights = trainResult.weights;
       store.mlModelWeights = trainResult.weights;
+      if (!store.modelRegistry.has(trainResult.weights.modelVersion)) {
+        store.modelRegistry.set(trainResult.weights.modelVersion, {
+          modelVersion: trainResult.weights.modelVersion,
+          lifecycleState: 'production',
+          trainedAt: trainResult.weights.trainedAt,
+          featureVersion: 'v1-canonical-16',
+          datasetVersion: 'dataset-v1.0',
+          sampleCount: trainResult.weights.sampleCount,
+          weights: trainResult.weights.weights,
+          bias: trainResult.weights.bias,
+          scaler: trainResult.weights.scaler,
+          classificationThreshold: 0.5,
+          validationMetrics: trainResult.weights.validationMetrics,
+          promotedAt: trainResult.weights.trainedAt,
+          promotionReason: 'Initial production model trained on historical dataset.',
+        });
+      } else {
+        const reg = store.modelRegistry.get(trainResult.weights.modelVersion)!;
+        reg.lifecycleState = 'production';
+      }
       return trainResult.weights;
     }
 
@@ -55,7 +81,19 @@ export class MLInferenceEngine {
       modelVersion: 'logreg-baseline-v1.0',
       validationMetrics: {},
       sampleCount: 0,
+      trainSampleCount: 0,
       validationSampleCount: 0,
+      positiveCount: 0,
+      negativeCount: 0,
+      featureList: [...CANONICAL_FEATURE_NAMES],
+      hyperparameters: {
+        epochs: 250,
+        learningRate: 0.05,
+        l2Lambda: 0.02,
+        classificationThreshold: 0.5,
+        splitStrategy: '75/25 chronological split',
+      },
+      targetDefinition: TARGET_CONSTRUCTION_SPEC,
       status: 'FALLBACK',
     };
 
@@ -156,13 +194,17 @@ export class MLInferenceEngine {
     featureImpacts.sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
     const topContributingFeatures = featureImpacts.slice(0, 5);
 
-    // 7. Calculate hybrid mastery blending with existing Bayesian mastery
+    // 7. Calculate hybrid mastery blending with existing Bayesian mastery and BKT mastery
     const learner = store.learners.get(learnerId);
-    const existingBayesian = learner?.conceptMasteries[conceptId]?.mastery ?? 0.20;
-    const mlWeight = config.enabled ? config.weight : 0.0;
-    const hybridMastery = Math.round(
-      ((1 - mlWeight) * existingBayesian + mlWeight * probability) * 1000
-    ) / 1000;
+    const cState = learner?.conceptMasteries[conceptId];
+    const existingBayesian = cState?.mastery ?? 0.20;
+    const existingBkt = cState?.bktMastery;
+    const hybridMastery = computeHybridMastery(
+      existingBayesian,
+      probability,
+      store.config,
+      existingBkt
+    );
 
     return {
       probability,
