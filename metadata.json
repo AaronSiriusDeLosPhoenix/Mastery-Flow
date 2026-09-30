@@ -1,0 +1,8 @@
+{
+  "name": "Mastery Flow",
+  "description": "Evidence-Driven Adaptive Learning \u0026 Intervention Engine for the YUVA Megathon 2026 EduGenAI Challenge.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
